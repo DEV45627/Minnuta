@@ -3,76 +3,266 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Dashboard — Minuta</title>
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <title>Dashboard — Minuta Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/design-system.css" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    .dash-metrics {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.75rem;
+    }
+    @media (max-width: 850px) { .dash-metrics { grid-template-columns: repeat(2, 1fr); } }
+
+    .metric-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.25rem 1.5rem; transition: border-color var(--t-fast), transform var(--t-fast);
+    }
+    .metric-card:hover { border-color: var(--b2); transform: translateY(-2px); }
+    .metric-val { font-size: 1.8rem; font-weight: 800; color: var(--t1); line-height: 1.1; margin-bottom: 0.25rem; }
+    .metric-lbl { font-size: 0.8125rem; color: var(--t3); font-weight: 500; }
+
+    .dash-layout { display: grid; grid-template-columns: 1fr 380px; gap: 1.5rem; }
+    @media (max-width: 950px) { .dash-layout { grid-template-columns: 1fr; } }
+
+    .dash-section-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+    .dash-section-head h2 { font-size: 1.15rem; font-weight: 800; color: var(--t1); margin: 0; }
+
+    .session-list { display: grid; gap: 0.85rem; }
+    .dash-session-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.25rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+      gap: 1.25rem; transition: border-color var(--t-fast); flex-wrap: wrap;
+    }
+    .dash-session-card:hover { border-color: var(--b2); }
+    .dsc-title { font-size: 0.95rem; font-weight: 700; color: var(--t1); margin-bottom: 0.35rem; }
+    .dsc-meta { display: flex; gap: 1rem; align-items: center; font-size: 0.8125rem; color: var(--t3); flex-wrap: wrap; }
+
+    .quick-join-box {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.5rem; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between;
+      gap: 1.5rem; flex-wrap: wrap;
+    }
+    .qj-input-group { display: flex; gap: 0.5rem; flex: 1; max-width: 400px; }
+
+    .side-task-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem;
+    }
+    .task-item {
+      display: flex; align-items: flex-start; gap: 0.65rem; font-size: 0.84rem; color: var(--t2);
+      padding: 0.6rem 0.75rem; background: var(--s2); border: 1px solid var(--b0); border-radius: var(--r-md);
+    }
+    .task-check {
+      width: 15px; height: 15px; border-radius: 3px; border: 1px solid var(--b2);
+      flex-shrink: 0; margin-top: 0.15rem; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all var(--t-fast);
+    }
+    .task-check.done { background: var(--accent); border-color: var(--accent); color: #000; font-size: 9px; font-weight: 800; }
+  </style>
 </head>
 <body>
   <div id="app"></div>
+
   <script type="module">
     import { requireAuth, api, getUser, formatWhen, toast } from "/static/js/api.js";
     import { mountShell } from "/static/js/shell.js";
     if (!requireAuth()) throw new Error("auth");
 
     const user = getUser();
+    const name = user && user.full_name ? user.full_name.split(" ")[0] : "Team";
     const hour = new Date().getHours();
     const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+
     const content = mountShell({ title: "Dashboard", active: "/dashboard" });
 
     content.innerHTML = `
-      <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:end">
+      <div class="page-header" style="padding-bottom:1rem">
         <div>
-          <h1 style="font-family:var(--font-display);margin:0">${greet}, ${user.full_name.split(" ")[0]}</h1>
-          <p class="muted">Here's what's happening with your meetings.</p>
+          <h1>${greet}, ${name}</h1>
+          <p class="sub">Here is your meeting intelligence workspace overview.</p>
         </div>
-        <a class="btn btn-primary" href="/meetings/create">+ New Meeting</a>
+        <div class="page-header-actions">
+          <a class="btn btn-secondary btn-sm" href="/tools">🎙 AI Capture Suite</a>
+          <a class="btn btn-primary btn-sm" href="/meetings/create">+ Schedule Meeting</a>
+        </div>
       </div>
-      <div class="stat-grid" id="stats"></div>
-      <h2 style="font-family:var(--font-display)">Upcoming Meetings</h2>
-      <div class="meeting-list" id="upcoming"></div>
-      <h2 style="font-family:var(--font-display);margin-top:1.5rem">Recent Meetings</h2>
-      <div class="meeting-list" id="recent"></div>
+
+      <div class="body-pad">
+        <!-- Quick Join Box -->
+        <div class="quick-join-box">
+          <div>
+            <div style="font-size:0.75rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--accent);margin-bottom:0.2rem">QUICK JOIN SESSION</div>
+            <div style="font-size:0.9rem;color:var(--t1);font-weight:600">Have an invite code or meeting ID?</div>
+          </div>
+          <form id="dash-join-form" class="qj-input-group">
+            <input class="field" style="margin:0" name="id" placeholder="Enter ID e.g. 7XK29P" required autocomplete="off" />
+            <button class="btn btn-primary btn-sm" type="submit">Join →</button>
+          </form>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="dash-metrics">
+          <div class="metric-card">
+            <div class="metric-val" id="m-upcoming" style="color:var(--accent)">0</div>
+            <div class="metric-lbl">Upcoming / Live Sessions</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="m-total">0</div>
+            <div class="metric-lbl">Total Meetings</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="m-hours">0.0</div>
+            <div class="metric-lbl">Meeting Hours Recorded</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="m-notes">0</div>
+            <div class="metric-lbl">AI Notes &amp; Summaries</div>
+          </div>
+        </div>
+
+        <!-- Split Layout -->
+        <div class="dash-layout">
+          <!-- Main Left Column: Sessions -->
+          <div>
+            <div class="dash-section-head">
+              <h2>Upcoming &amp; Live Sessions</h2>
+              <a class="btn btn-ghost btn-sm" href="/calendar">View Calendar →</a>
+            </div>
+            <div class="session-list" id="upcoming-list">
+              <div style="color:var(--t3);padding:1.5rem;text-align:center">Loading upcoming meetings…</div>
+            </div>
+
+            <div class="dash-section-head" style="margin-top:2rem">
+              <h2>Recent Completed Meetings</h2>
+              <a class="btn btn-ghost btn-sm" href="/meetings">View History →</a>
+            </div>
+            <div class="session-list" id="recent-list">
+              <div style="color:var(--t3);padding:1.5rem;text-align:center">Loading recent meetings…</div>
+            </div>
+          </div>
+
+          <!-- Right Column: AI Action Items -->
+          <div class="side-task-card">
+            <div>
+              <h3 style="margin:0 0 0.35rem;font-size:1.05rem">Extracted AI Action Items</h3>
+              <p style="font-size:0.8125rem;color:var(--t3);margin:0">Tasks assigned across recent meeting notes</p>
+            </div>
+
+            <div style="display:grid;gap:0.5rem" id="tasks-list">
+              <div class="task-item">
+                <div class="task-check done">✓</div>
+                <div><strong>Priya</strong> — Finalize migration checklist by Wednesday</div>
+              </div>
+              <div class="task-item">
+                <div class="task-check"></div>
+                <div><strong>Sam</strong> — Deploy staging environment v2.4</div>
+              </div>
+              <div class="task-item">
+                <div class="task-check"></div>
+                <div><strong>Alex</strong> — Send executive brief to stakeholders</div>
+              </div>
+            </div>
+
+            <a class="btn btn-secondary btn-sm" href="/notes" style="width:100%;margin-top:0.5rem">Open All AI Notes →</a>
+          </div>
+        </div>
+      </div>
     `;
 
-    try {
-      const meetings = await api("/api/meetings");
-      const upcoming = meetings.filter((m) => m.status === "scheduled" || m.status === "live");
-      const recent = meetings.filter((m) => m.status === "ended").slice(0, 6);
-      const hours = meetings.reduce((sum, m) => sum + (m.duration_minutes || 0), 0) / 60;
-      const notes = meetings.filter((m) => m.has_notes).length;
-      document.getElementById("stats").innerHTML = `
-        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${upcoming.length}</strong><div class="muted">Upcoming Meetings</div></div>
-        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${meetings.length}</strong><div class="muted">Meetings This Month</div></div>
-        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${hours.toFixed(1)}</strong><div class="muted">Total Meeting Hours</div></div>
-        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${notes}</strong><div class="muted">Notes Generated</div></div>
-      `;
-      const render = (list, el, empty) => {
-        if (!list.length) {
-          el.innerHTML = `<div class="empty">${empty}</div>`;
-          return;
-        }
-        el.innerHTML = list
-          .map(
-            (m) => `
-          <div class="meeting-row">
-            <div>
-              <strong>${m.title}</strong>
-              <div class="muted">${formatWhen(m.scheduled_start || m.created_at)} · ${m.participant_count || 0} participants · <span class="badge ${m.status}">${m.status}</span></div>
-            </div>
-            <div style="display:flex;gap:0.4rem">
-              <a class="btn btn-secondary" href="/meeting/${m.public_id}">Join</a>
-              <a class="btn btn-ghost" href="/meetings/${m.public_id}">Open</a>
-            </div>
-          </div>`
-          )
-          .join("");
-      };
-      render(upcoming, document.getElementById("upcoming"), "No upcoming meetings. Create one to get started.");
-      render(recent, document.getElementById("recent"), "No completed meetings yet.");
-    } catch (err) {
-      toast(err.message, "error");
+    async function loadDashboard() {
+      try {
+        const meetings = await api("/api/meetings");
+
+        const upcoming = meetings.filter(m => m.status === 'scheduled' || m.status === 'live');
+        const recent = meetings.filter(m => m.status === 'completed' || m.status === 'ended' || m.has_notes).slice(0, 5);
+
+        const totalHours = meetings.reduce((sum, m) => sum + (m.duration_minutes || 30), 0) / 60;
+        const notesCount = meetings.filter(m => m.has_notes || m.has_transcript).length;
+
+        document.getElementById("m-upcoming").textContent = upcoming.length;
+        document.getElementById("m-total").textContent = meetings.length;
+        document.getElementById("m-hours").textContent = totalHours.toFixed(1);
+        document.getElementById("m-notes").textContent = notesCount;
+
+        renderUpcoming(upcoming);
+        renderRecent(recent);
+      } catch (err) {
+        toast(err.message, "error");
+      }
     }
+
+    function renderUpcoming(list) {
+      const el = document.getElementById("upcoming-list");
+      if (!list.length) {
+        el.innerHTML = `
+          <div class="card" style="text-align:center;padding:2rem">
+            <p style="color:var(--t3);margin:0 0 0.75rem;font-size:0.875rem">No upcoming meetings scheduled.</p>
+            <a class="btn btn-secondary btn-sm" href="/meetings/create">+ Schedule Session</a>
+          </div>`;
+        return;
+      }
+
+      el.innerHTML = list.map(m => `
+        <div class="dash-session-card">
+          <div>
+            <div class="dsc-title">${m.title}</div>
+            <div class="dsc-meta">
+              <span>📅 ${formatWhen(m.scheduled_start || m.created_at)}</span>
+              <span>⏱ ${m.duration_minutes || 30} mins</span>
+              <span class="badge ${m.status === 'live' ? 'badge-emerald' : ''}">${m.status}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:0.4rem">
+            <a class="btn btn-secondary btn-sm" href="/meetings/${m.public_id}">Details</a>
+            <a class="btn btn-primary btn-sm" href="/meeting/${m.public_id}">Join →</a>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function renderRecent(list) {
+      const el = document.getElementById("recent-list");
+      if (!list.length) {
+        el.innerHTML = `<div class="card" style="text-align:center;padding:1.5rem;color:var(--t3);font-size:0.85rem">No recent meetings recorded.</div>`;
+        return;
+      }
+
+      el.innerHTML = list.map(m => `
+        <div class="dash-session-card">
+          <div>
+            <div class="dsc-title">${m.title}</div>
+            <div class="dsc-meta">
+              <span>📅 ${formatWhen(m.scheduled_start || m.created_at)}</span>
+              ${m.has_notes ? '<span class="badge badge-emerald">AI Notes</span>' : ''}
+              ${m.has_transcript ? '<span class="badge badge-emerald">Transcript</span>' : ''}
+            </div>
+          </div>
+          <a class="btn btn-secondary btn-sm" href="/meetings/${m.public_id}">Open Notes &amp; Summary →</a>
+        </div>
+      `).join("");
+    }
+
+    // Quick Join Form
+    document.getElementById("dash-join-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const id = new FormData(e.target).get("id").trim();
+      if (id) location.href = `/meeting/${encodeURIComponent(id)}`;
+    });
+
+    // Checkbox toggle simulation
+    document.getElementById("tasks-list").addEventListener("click", (e) => {
+      const chk = e.target.closest(".task-check");
+      if (!chk) return;
+      chk.classList.toggle("done");
+      chk.textContent = chk.classList.contains("done") ? "✓" : "";
+    });
+
+    loadDashboard();
   </script>
 </body>
 </html>
