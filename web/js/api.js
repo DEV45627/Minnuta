@@ -48,27 +48,28 @@ export async function api(path, options = {}) {
     // Network offline or static host fallback
   }
 
-  // Check if response is HTML or Vercel 404/405 static page error
-  const isHtmlOrVercel404 =
+  // Check if response is HTML, Vercel Edge 404, or non-JSON static response
+  const isVercelStaticError =
     !res ||
     res.status === 404 ||
     res.status === 405 ||
     !text ||
-    text.startsWith("<!DOCTYPE") ||
+    text.startsWith("<!") ||
     text.includes("NOT_FOUND") ||
-    text.includes("could not be found");
+    text.includes("could not be found") ||
+    text.includes("bom1::");
 
-  // Handle live backend API response if available
-  if (res && res.ok && !isHtmlOrVercel404) {
+  // Handle live backend API response if available and valid JSON
+  if (res && res.ok && !isVercelStaticError) {
     try {
       return JSON.parse(text);
     } catch {
-      return { message: text };
+      // Not JSON
     }
   }
 
-  // Handle structured backend error JSON (e.g. 400 Bad Request with { detail: "Email taken" })
-  if (res && !res.ok && !isHtmlOrVercel404) {
+  // Handle structured backend API error JSON (e.g. 400 Bad Request with { detail: "Email taken" })
+  if (res && !res.ok && !isVercelStaticError) {
     let data = null;
     try {
       data = JSON.parse(text);
