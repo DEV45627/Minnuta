@@ -329,6 +329,12 @@
         peerId,
         displayName,
         role,
+        localStream,
+        onRemoteStream: (id, stream) => {
+          const meta = roster.find((p) => p.peer_id === id);
+          addTile(id, stream, meta?.display_name || "Participant");
+          if (side === "diag") renderSide();
+        },
         onState: (state) => {
           wsState = state;
           if (side === "diag") renderSide();
@@ -337,12 +343,12 @@
           if (msg.type === "welcome") {
             roster = msg.roster || [];
             for (const p of roster) {
-              if (p.peer_id !== peerId) await mesh.call(p.peer_id);
+              if (p.peer_id !== peerId && p.peer_id !== signaling.peerJsId) await mesh.call(p.peer_id);
             }
             renderSide();
           } else if (msg.type === "peer_joined") {
             roster = msg.roster || roster;
-            if (msg.peer_id !== peerId) await mesh.call(msg.peer_id);
+            if (msg.peer_id !== peerId && msg.peer_id !== signaling.peerJsId) await mesh.call(msg.peer_id);
             renderSide();
           } else if (msg.type === "peer_left") {
             roster = msg.roster || roster;

@@ -1,13 +1,11 @@
 /** Mesh WebRTC helpers for Minuta meeting rooms. */
 
 function wsUrlForMeeting(publicId, qs) {
-  // Derive from the page origin — works for https://domain (wss) and local http (ws).
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}/ws/meetings/${publicId}?${qs}`;
 }
 
 function candidateType(candidate) {
-  // host | srflx | prflx | relay
   const m = String(candidate?.candidate || candidate || "").match(/\btyp\s+(\w+)/i);
   return m ? m[1] : null;
 }
@@ -132,11 +130,13 @@ export class MeshRoom {
 }
 
 export class SignalingClient {
-  constructor(publicId, { peerId, displayName, role, onMessage, onState }) {
+  constructor(publicId, { peerId, displayName, role, localStream, onRemoteStream, onMessage, onState }) {
     this.publicId = publicId;
     this.peerId = peerId;
     this.displayName = displayName;
     this.role = role;
+    this.localStream = localStream;
+    this.onRemoteStream = onRemoteStream;
     this.onMessage = onMessage;
     this.onState = onState;
     this.ws = null;
@@ -145,7 +145,11 @@ export class SignalingClient {
     this.rosterKey = `minuta_room_roster_${publicId}`;
     this.isFallback = false;
     this.peerjs = null;
+    this.peerJsId = null;
     this.peerJsConns = new Map();
+    this.peerJsCalls = new Map();
+    this.slotIndex = -1;
+    this.slotTimer = null;
   }
 
   connect() {
@@ -219,36 +223,12 @@ export class SignalingClient {
       if (ev.key === this.storageKey && ev.newValue) {
         try {
           const msg = JSON.parse(ev.newValue);
-          if (msg && msg._sender !== this.peerId) {
+          if (msg && msg._sender !== this.peerId && msg._sender !== this.peerJsId) {
             this._handleFallbackMsg(msg);
           }
         } catch (_) {}
       }
     });
-
-    let roster = this._getRoster();
-    roster = roster.filter((p) => p.peer_id !== this.peerId);
-    roster.push({
-      peer_id: this.peerId,
-      display_name: this.displayName,
-      role: this.role,
-    });
-    this._saveRoster(roster);
-
-    setTimeout(() => {
-      const currentRoster = this._getRoster();
-      this._dispatchFallbackMsg({
-        type: "welcome",
-        roster: currentRoster,
-      });
-      this._dispatchFallbackMsg({
-        type: "peer_joined",
-        peer_id: this.peerId,
-        display_name: this.displayName,
-        role: this.role,
-        roster: currentRoster,
-      });
-    }, 100);
 
     this._initPeerJS();
   }
@@ -262,123 +242,214 @@ export class SignalingClient {
       const script = document.createElement("script");
       script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
       script.onload = () => this._setupPeerJS();
+      script.onerror = () => {
+        const backupScript = document.createElement("script");
+        backupScript.src = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
+        backupScript.onload = () => this._setupPeerJS();
+        document.head.appendChild(backupScript);
+      };
       document.head.appendChild(script);
     } catch (_) {}
   }
 
   _setupPeerJS() {
-    if (!window.Peer) return;
+    if (!window.Peer || this.peerjs) return;
+
+    const maxSlots = 8;
+    const trySlot = (slot) => {
+      if (slot >= maxSlots) {
+        const fallbackId = `minuta_${this.publicId}_${crypto.randomUUID().slice(0, 6)}`;
+        this._bindPeerJsInstance(fallbackId, slot, () => {});
+        return;
+      }
+      const candidateId = `minuta_${this.publicId}_slot${slot}`;
+      this._bindPeerJsInstance(candidateId, slot, (err) => {
+        if (err?.type === "unavailable-id" || err?.type === "peer-unavailable" || err?.message?.includes("taken")) {
+          trySlot(slot + 1);
+        }
+      });
+    };
+
+    trySlot(0);
+  }
+
+  _bindPeerJsInstance(candidateId, slot, onErrorCallback) {
     try {
-      const cleanPeerId = this.peerId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
-      const peerJsId = `minuta_${this.publicId}_${cleanPeerId}`;
-      this.peerjs = new window.Peer(peerJsId, {
+      const peer = new window.Peer(candidateId, {
         config: {
           iceServers: [
             { urls: "stun:stun.l.google.com:19302" },
             { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:stun2.l.google.com:19302" },
+            { urls: "stun:stun3.l.google.com:19302" },
             { urls: "stun:global.stun.twilio.com:3478" },
           ],
         },
       });
 
-      this.peerjs.on("connection", (conn) => {
-        conn.on("open", () => {
-          try {
-            conn.send({
-              type: "welcome",
-              roster: this._getRoster(),
-              _sender: this.peerId,
-            });
-          } catch (_) {}
+      let registered = false;
+
+      peer.on("open", (id) => {
+        registered = true;
+        this.peerjs = peer;
+        this.slotIndex = slot;
+        this.peerJsId = id;
+
+        peer.on("call", (call) => {
+          const streamToSend = this.localStream || new MediaStream();
+          call.answer(streamToSend);
+          this.peerJsCalls.set(call.peer, call);
+
+          call.on("stream", (remoteStream) => {
+            this.onRemoteStream?.(call.peer, remoteStream);
+          });
+          call.on("close", () => {
+            this.peerJsCalls.delete(call.peer);
+          });
+          call.on("error", () => {
+            this.peerJsCalls.delete(call.peer);
+          });
         });
-        conn.on("data", (data) => {
-          if (data && data._sender) {
-            this.peerJsConns.set(data._sender, conn);
-          }
-          this._handleFallbackMsg(data);
+
+        peer.on("connection", (conn) => {
+          conn.on("open", () => {
+            try {
+              conn.send({
+                type: "welcome",
+                roster: this._getPeerJsRoster(),
+                _sender: this.peerJsId || this.peerId,
+              });
+            } catch (_) {}
+          });
+          conn.on("data", (data) => {
+            if (data && data._sender) {
+              this.peerJsConns.set(data._sender, conn);
+            }
+            if (data && data.display_name) {
+              conn._displayName = data.display_name;
+            }
+            this._handleFallbackMsg(data);
+          });
+          conn.on("close", () => {
+            if (conn._sender) this.peerJsConns.delete(conn._sender);
+          });
         });
+
+        this._startSlotScanner();
       });
 
-      this.peerjs.on("open", () => {
-        const roster = this._getRoster();
-        for (const p of roster) {
-          if (p.peer_id !== this.peerId) {
-            this._sendViaPeerJs(p.peer_id, {
-              type: "peer_joined",
-              peer_id: this.peerId,
-              display_name: this.displayName,
-              role: this.role,
-            });
-          }
+      peer.on("error", (err) => {
+        if (!registered) {
+          try { peer.destroy(); } catch (_) {}
+          onErrorCallback?.(err);
         }
       });
-
-      this.peerjs.on("error", () => {});
-    } catch (_) {}
+    } catch (e) {
+      onErrorCallback?.(e);
+    }
   }
 
-  _sendViaPeerJs(remotePeerId, msg) {
-    if (!this.peerjs) return;
-    const cleanTo = remotePeerId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
-    const remotePeerJsId = `minuta_${this.publicId}_${cleanTo}`;
+  _getPeerJsRoster() {
+    const list = [];
+    for (const [id, conn] of this.peerJsConns.entries()) {
+      list.push({ peer_id: id, display_name: conn._displayName || "Participant", role: "participant" });
+    }
+    list.push({ peer_id: this.peerJsId || this.peerId, display_name: this.displayName, role: this.role });
+    return list;
+  }
 
-    let conn = this.peerJsConns.get(remotePeerId);
-    if (!conn) {
-      try {
-        conn = this.peerjs.connect(remotePeerJsId);
-        conn._pending = [msg];
-        conn.on("open", () => {
-          this.peerJsConns.set(remotePeerId, conn);
-          if (conn._pending) {
-            for (const m of conn._pending) {
-              try { conn.send(m); } catch (_) {}
+  _startSlotScanner() {
+    if (this.slotTimer) clearInterval(this.slotTimer);
+
+    const scan = () => {
+      if (!this.peerjs || this.peerjs.destroyed) return;
+      for (let s = 0; s < 8; s++) {
+        if (s === this.slotIndex) continue;
+        const targetSlotId = `minuta_${this.publicId}_slot${s}`;
+
+        if (!this.peerJsConns.has(targetSlotId) || !this.peerJsConns.get(targetSlotId)?.open) {
+          this._connectPeerJsSlot(targetSlotId);
+        }
+
+        if (!this.peerJsCalls.has(targetSlotId)) {
+          try {
+            const streamToSend = this.localStream || new MediaStream();
+            const call = this.peerjs.call(targetSlotId, streamToSend);
+            if (call) {
+              this.peerJsCalls.set(targetSlotId, call);
+              call.on("stream", (remoteStream) => {
+                this.onRemoteStream?.(targetSlotId, remoteStream);
+              });
+              call.on("close", () => {
+                this.peerJsCalls.delete(targetSlotId);
+              });
+              call.on("error", () => {
+                this.peerJsCalls.delete(targetSlotId);
+              });
             }
-            conn._pending = [];
-          }
-        });
-        conn.on("data", (data) => {
-          if (data && data._sender) {
-            this.peerJsConns.set(data._sender, conn);
-          }
-          this._handleFallbackMsg(data);
-        });
-        this.peerJsConns.set(remotePeerId, conn);
-      } catch (_) {}
-      return;
-    }
+          } catch (_) {}
+        }
+      }
+    };
 
-    if (conn.open) {
-      try {
-        conn.send(msg);
-      } catch (_) {}
-    } else {
-      if (!conn._pending) conn._pending = [];
-      conn._pending.push(msg);
-    }
+    scan();
+    this.slotTimer = setInterval(scan, 3000);
   }
 
-  _getRoster() {
+  _connectPeerJsSlot(targetSlotId) {
+    if (!this.peerjs) return;
     try {
-      return JSON.parse(localStorage.getItem(this.rosterKey) || "[]");
-    } catch {
-      return [];
-    }
-  }
-
-  _saveRoster(roster) {
-    try {
-      localStorage.setItem(this.rosterKey, JSON.stringify(roster));
+      const conn = this.peerjs.connect(targetSlotId);
+      conn._pending = [{
+        type: "peer_joined",
+        peer_id: this.peerJsId || this.peerId,
+        display_name: this.displayName,
+        role: this.role,
+        roster: this._getPeerJsRoster(),
+        _sender: this.peerJsId || this.peerId,
+      }];
+      conn.on("open", () => {
+        this.peerJsConns.set(targetSlotId, conn);
+        if (conn._pending) {
+          for (const m of conn._pending) {
+            try { conn.send(m); } catch (_) {}
+          }
+          conn._pending = [];
+        }
+      });
+      conn.on("data", (data) => {
+        if (data && data.display_name) {
+          conn._displayName = data.display_name;
+        }
+        if (data && data._sender) {
+          this.peerJsConns.set(data._sender, conn);
+        }
+        this._handleFallbackMsg(data);
+      });
+      conn.on("close", () => {
+        this.peerJsConns.delete(targetSlotId);
+      });
+      conn.on("error", () => {
+        this.peerJsConns.delete(targetSlotId);
+      });
     } catch (_) {}
   }
 
   _handleFallbackMsg(msg) {
-    if (!msg || msg._sender === this.peerId) return;
-    if (msg.to && msg.to !== this.peerId) return;
+    if (!msg) return;
+    const sender = msg._sender || msg.from || msg.peer_id;
+    if (sender === this.peerId || sender === this.peerJsId) return;
+    if (msg.to && msg.to !== this.peerId && msg.to !== this.peerJsId) return;
+
+    if (msg.type === "peer_joined" || msg.type === "welcome") {
+      const currentRoster = this._getPeerJsRoster();
+      msg.roster = currentRoster;
+    }
     this.onMessage?.(msg);
   }
 
   _dispatchFallbackMsg(payload) {
-    const msg = { ...payload, _sender: this.peerId };
+    const msg = { ...payload, _sender: this.peerJsId || this.peerId };
     if (this.channel) {
       try {
         this.channel.postMessage(msg);
@@ -388,26 +459,36 @@ export class SignalingClient {
       localStorage.setItem(this.storageKey, JSON.stringify({ ...msg, _t: Date.now() }));
     } catch (_) {}
 
-    if (this.peerjs) {
-      if (payload.to) {
-        this._sendViaPeerJs(payload.to, msg);
-      } else {
-        for (const conn of this.peerJsConns.values()) {
-          if (conn && conn.open) {
-            try {
-              conn.send(msg);
-            } catch (_) {}
-          } else if (conn) {
-            if (!conn._pending) conn._pending = [];
-            conn._pending.push(msg);
-          }
-        }
+    for (const conn of this.peerJsConns.values()) {
+      if (conn && conn.open) {
+        try {
+          conn.send(msg);
+        } catch (_) {}
+      } else if (conn) {
+        if (!conn._pending) conn._pending = [];
+        conn._pending.push(msg);
       }
     }
   }
 
+  replaceVideoTrack(track) {
+    if (this.localStream) {
+      const senderTrack = this.localStream.getVideoTracks()[0];
+      if (senderTrack) {
+        this.localStream.removeTrack(senderTrack);
+      }
+      this.localStream.addTrack(track);
+    }
+    for (const call of this.peerJsCalls.values()) {
+      try {
+        const sender = call.peerConnection?.getSenders()?.find((s) => s.track && s.track.kind === "video");
+        if (sender) sender.replaceTrack(track);
+      } catch (_) {}
+    }
+  }
+
   readyStateLabel() {
-    if (this.isFallback) return "open";
+    if (this.isFallback) return "open (slot " + (this.slotIndex >= 0 ? this.slotIndex : "connecting") + ")";
     if (!this.ws) return "none";
     return ["connecting", "open", "closing", "closed"][this.ws.readyState] || "unknown";
   }
@@ -421,28 +502,23 @@ export class SignalingClient {
   }
 
   close() {
+    if (this.slotTimer) {
+      clearInterval(this.slotTimer);
+      this.slotTimer = null;
+    }
     if (this.ws) {
-      try {
-        this.ws.close();
-      } catch (_) {}
+      try { this.ws.close(); } catch (_) {}
     }
     if (this.channel) {
-      try {
-        this.channel.close();
-      } catch (_) {}
+      try { this.channel.close(); } catch (_) {}
     }
     if (this.peerjs) {
-      try {
-        this.peerjs.destroy();
-      } catch (_) {}
+      try { this.peerjs.destroy(); } catch (_) {}
     }
     if (this.isFallback) {
-      let roster = this._getRoster().filter((p) => p.peer_id !== this.peerId);
-      this._saveRoster(roster);
       this._dispatchFallbackMsg({
         type: "peer_left",
-        peer_id: this.peerId,
-        roster,
+        peer_id: this.peerJsId || this.peerId,
       });
     }
   }
