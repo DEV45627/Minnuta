@@ -144,6 +144,7 @@ export class SignalingClient {
     this.storageKey = `minuta_room_msg_${publicId}`;
     this.rosterKey = `minuta_room_roster_${publicId}`;
     this.isFallback = false;
+    this.peerjs = null;
   }
 
   connect() {
@@ -247,6 +248,46 @@ export class SignalingClient {
         roster: currentRoster,
       });
     }, 100);
+
+    this._initPeerJS();
+  }
+
+  _initPeerJS() {
+    if (window.Peer) {
+      this._setupPeerJS();
+      return;
+    }
+    try {
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+      script.onload = () => this._setupPeerJS();
+      document.head.appendChild(script);
+    } catch (_) {}
+  }
+
+  _setupPeerJS() {
+    if (!window.Peer) return;
+    try {
+      const cleanPeerId = this.peerId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+      const peerJsId = `minuta_${this.publicId}_${cleanPeerId}`;
+      this.peerjs = new window.Peer(peerJsId, {
+        config: {
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            { urls: "stun:global.stun.twilio.com:3478" },
+          ],
+        },
+      });
+
+      this.peerjs.on("connection", (conn) => {
+        conn.on("data", (data) => {
+          this._handleFallbackMsg(data);
+        });
+      });
+
+      this.peerjs.on("error", () => {});
+    } catch (_) {}
   }
 
   _getRoster() {
@@ -279,6 +320,17 @@ export class SignalingClient {
     try {
       localStorage.setItem(this.storageKey, JSON.stringify({ ...msg, _t: Date.now() }));
     } catch (_) {}
+
+    if (this.peerjs && payload.to) {
+      try {
+        const cleanTo = payload.to.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+        const remotePeerJsId = `minuta_${this.publicId}_${cleanTo}`;
+        const conn = this.peerjs.connect(remotePeerJsId);
+        conn.on("open", () => {
+          conn.send(msg);
+        });
+      } catch (_) {}
+    }
   }
 
   readyStateLabel() {
@@ -304,6 +356,11 @@ export class SignalingClient {
     if (this.channel) {
       try {
         this.channel.close();
+      } catch (_) {}
+    }
+    if (this.peerjs) {
+      try {
+        this.peerjs.destroy();
       } catch (_) {}
     }
     if (this.isFallback) {
