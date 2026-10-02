@@ -3,22 +3,27 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-
+import bcrypt
 from jose import jwt
-from passlib.context import CryptContext
 
 from backend.config import get_settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 settings = get_settings()
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    pwd_bytes = password.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pwd_bytes, salt).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        pwd_bytes = plain.encode("utf-8")[:72]
+        hash_bytes = hashed.encode("utf-8")
+        return bcrypt.checkpw(pwd_bytes, hash_bytes)
+    except Exception:
+        return False
 
 
 def create_access_token(subject: str, expires_minutes: int | None = None) -> str:
@@ -26,7 +31,7 @@ def create_access_token(subject: str, expires_minutes: int | None = None) -> str
         minutes=expires_minutes or settings.access_token_expire_minutes
     )
     return jwt.encode(
-        {"sub": subject, "exp": expire},
+        {"sub": str(subject), "exp": expire},
         settings.secret_key,
         algorithm=settings.algorithm,
     )
