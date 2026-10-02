@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sign in — Minuta Enterprise</title>
+  <title>Sign In — Minuta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
@@ -11,98 +11,123 @@
   <link rel="stylesheet" href="/static/css/app.css" />
   <style>
     body {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
       min-height: 100vh;
       background: var(--s0);
-    }
-    .auth-left {
-      border-right: 1px solid var(--b0);
-      padding: 3rem;
       display: flex;
       flex-direction: column;
-      background: var(--s1);
-      position: relative;
     }
-    .auth-left-content {
-      margin: auto 0;
+
+    .auth-page-header {
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--b0);
+    }
+
+    .auth-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 1.5rem;
+    }
+
+    .auth-card {
+      width: 100%;
       max-width: 420px;
+      background: var(--s1);
+      border: 1px solid var(--b1);
+      border-radius: var(--r-xl);
+      padding: 2.25rem;
+      box-shadow: var(--sh-md);
     }
-    .auth-tagline {
-      font-size: clamp(1.6rem, 3vw, 2.4rem);
+
+    .auth-card-head {
+      margin-bottom: 1.75rem;
+    }
+
+    .auth-card-head h1 {
+      font-size: 1.5rem;
       font-weight: 800;
-      letter-spacing: -0.04em;
-      line-height: 1.15;
+      letter-spacing: -0.03em;
       color: var(--t1);
-      margin: 0 0 1.25rem;
+      margin: 0 0 0.4rem;
     }
-    .auth-feat-list {
-      display: grid; gap: 0.75rem;
-      list-style: none; padding: 0; margin: 0 0 2.5rem;
-    }
-    .auth-feat-list li {
-      display: flex; align-items: center; gap: 0.65rem;
-      font-size: 0.875rem; color: var(--t2);
-    }
-    .auth-feat-list li::before {
-      content: '✓'; color: var(--accent); font-weight: 700; flex-shrink: 0;
-    }
-    .auth-quote {
-      padding-top: 1.25rem;
-      border-top: 1px solid var(--b0);
-    }
-    .auth-quote p {
-      margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--t2); line-height: 1.6; font-style: italic;
-    }
-    .auth-quote cite { font-size: 0.78rem; font-style: normal; color: var(--t3); }
 
-    .auth-right {
-      display: flex; align-items: center; justify-content: center;
-      padding: 2.5rem; background: var(--s0);
+    .auth-card-head p {
+      font-size: 0.875rem;
+      color: var(--t2);
+      margin: 0;
     }
-    .auth-form-card { width: 100%; max-width: 380px; }
-    .auth-back {
-      display: inline-flex; align-items: center; gap: 0.35rem;
-      font-size: 0.8125rem; color: var(--t3); text-decoration: none;
-      font-weight: 500; margin-bottom: 2rem; transition: color var(--t-fast);
-    }
-    .auth-back:hover { color: var(--t1); }
-    .auth-back::before { content: '←'; }
 
-    .auth-form-card h1 {
-      font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em;
-      color: var(--t1); margin: 0 0 0.35rem;
+    /* Error alert box */
+    .auth-alert-error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.25);
+      color: #f87171;
+      padding: 0.75rem 1rem;
+      border-radius: var(--r-md);
+      font-size: 0.82rem;
+      font-weight: 500;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
-    .auth-form-card .subtitle {
-      font-size: 0.875rem; color: var(--t2); margin: 0 0 1.75rem;
-    }
+
     .auth-divider {
-      display: flex; align-items: center; gap: 0.75rem; margin: 1.25rem 0;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1.25rem 0;
     }
     .auth-divider::before, .auth-divider::after {
-      content: ''; flex: 1; height: 1px; background: var(--b0);
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--b0);
     }
-    .auth-divider span { font-size: 0.75rem; color: var(--t3); }
+    .auth-divider span {
+      font-size: 0.75rem;
+      color: var(--t3);
+    }
 
     .demo-link {
-      display: block; text-align: center; padding: 0.65rem;
-      border: 1px solid var(--b1); border-radius: var(--r-md);
-      font-size: 0.875rem; font-weight: 600; color: var(--t2);
+      display: block;
+      text-align: center;
+      padding: 0.65rem;
+      border: 1px solid var(--b1);
+      border-radius: var(--r-md);
+      font-size: 0.84rem;
+      font-weight: 600;
+      color: var(--t2);
+      text-decoration: none;
       transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
     }
-    .demo-link:hover { border-color: var(--b2); color: var(--t1); background: var(--s2); }
-
-    .form-footer-row {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-top: 1.5rem; font-size: 0.8125rem;
+    .demo-link:hover {
+      border-color: var(--b2);
+      color: var(--t1);
+      background: var(--s2);
     }
-    .form-footer-row a { color: var(--t3); text-decoration: none; }
-    .form-footer-row a:hover { color: var(--t1); }
 
-    @media (max-width: 768px) {
-      body { grid-template-columns: 1fr; }
-      .auth-left { display: none; }
-      .auth-right { padding: 2rem 1.5rem; }
+    .auth-card-footer {
+      margin-top: 1.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--b0);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.84rem;
+      color: var(--t3);
+    }
+
+    .auth-card-footer a {
+      color: var(--t2);
+      text-decoration: none;
+    }
+    .auth-card-footer a:hover {
+      color: var(--t1);
     }
   </style>
 </head>
@@ -110,54 +135,41 @@
   <div class="ambient-grid" aria-hidden="true"></div>
   <div id="toast-host" class="toast-host"></div>
 
-  <!-- Left: Brand showcase -->
-  <div class="auth-left">
+  <!-- Header -->
+  <header class="auth-page-header">
     <a class="brand-mark" href="/">
       <span class="brand-glyph"></span>
       Minuta
     </a>
+    <a class="btn btn-primary btn-sm" href="/register">Create Account</a>
+  </header>
 
-    <div class="auth-left-content">
-      <h2 class="auth-tagline">
-        Enterprise AI Meeting Intelligence.
-      </h2>
-
-      <ul class="auth-feat-list">
-        <li>Real-time speech-to-text with zero plugins</li>
-        <li>Automated executive summaries and decisions</li>
-        <li>Integrated WebRTC video conferencing</li>
-        <li>Full-text search across every organization session</li>
-      </ul>
-
-      <div class="auth-quote">
-        <p>"Minuta has eliminated manual meeting recap emails entirely across our product organization."</p>
-        <cite>Rachel Stevens — VP of Product, Vertex Systems</cite>
-      </div>
-    </div>
-  </div>
-
-  <!-- Right: Sign in form -->
-  <div class="auth-right">
-    <div class="auth-form-card">
-      <a class="auth-back" href="/">Back to main site</a>
-
-      <div class="auth-form-top">
+  <!-- Center Card -->
+  <main class="auth-container">
+    <div class="auth-card">
+      <div class="auth-card-head">
         <h1>Sign in to Minuta</h1>
-        <p class="subtitle">Access your organization's meeting workspace.</p>
+        <p>Welcome back. Enter your credentials to access your account.</p>
+      </div>
+
+      <!-- Error Alert Banner -->
+      <div id="auth-error" class="auth-alert-error" style="display:none">
+        <span id="auth-error-msg">Invalid email or password</span>
       </div>
 
       <form id="login-form">
         <label class="field">
           <span>Work Email</span>
-          <input type="email" name="email" placeholder="name@company.com" required autocomplete="email" />
-        </label>
-        <label class="field">
-          <span>Password</span>
-          <input type="password" name="password" placeholder="••••••••" required autocomplete="current-password" />
+          <input type="email" name="email" placeholder="alex@company.com" required autocomplete="email" />
         </label>
 
-        <button class="btn btn-primary" type="submit" id="login-btn" style="width:100%;margin-top:0.5rem">
-          Sign in →
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" placeholder="Your password" required autocomplete="current-password" />
+        </label>
+
+        <button class="btn btn-primary" type="submit" id="login-btn" style="width:100%;margin-top:0.75rem;padding:0.7rem">
+          Sign In →
         </button>
 
         <div class="auth-divider"><span>or</span></div>
@@ -165,32 +177,43 @@
         <a class="demo-link" href="/demo">Access Live Interactive Demo</a>
       </form>
 
-      <div class="form-footer-row">
+      <div class="auth-card-footer">
         <a href="/register">Need an account? Sign up</a>
         <a href="/forgot-password">Forgot password?</a>
       </div>
     </div>
-  </div>
+  </main>
 
   <script type="module">
     import { api, setSession, toast } from "/static/js/api.js";
 
+    const errBox = document.getElementById("auth-error");
+    const errMsg = document.getElementById("auth-error-msg");
+
     document.getElementById("login-form").addEventListener("submit", async (e) => {
       e.preventDefault();
+      errBox.style.display = "none";
+
       const btn = document.getElementById("login-btn");
       const orig = btn.textContent;
       btn.disabled = true;
       btn.textContent = "Authenticating…";
+
       const fd = new FormData(e.target);
+      const email = (fd.get("email") || "").trim();
+      const password = fd.get("password");
+
       try {
         const data = await api("/api/auth/login", {
           method: "POST",
-          body: JSON.stringify({ email: fd.get("email"), password: fd.get("password") }),
+          body: JSON.stringify({ email: email, password: password }),
         });
         setSession(data.access_token, data.user);
-        location.href = "/dashboard";
+        toast("Signed in successfully! Redirecting…", "ok");
+        setTimeout(() => { location.href = "/dashboard"; }, 500);
       } catch (err) {
-        toast(err.message, "error");
+        errMsg.textContent = err.message || "Invalid email or password.";
+        errBox.style.display = "flex";
         btn.disabled = false;
         btn.textContent = orig;
       }
