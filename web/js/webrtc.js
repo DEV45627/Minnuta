@@ -145,6 +145,7 @@ export class SignalingClient {
     this.rosterKey = `minuta_room_roster_${publicId}`;
     this.isFallback = false;
     this.peerjs = null;
+    this.peerJsConns = new Map();
   }
 
   connect() {
@@ -282,12 +283,53 @@ export class SignalingClient {
 
       this.peerjs.on("connection", (conn) => {
         conn.on("data", (data) => {
+          if (data && data._sender) {
+            this.peerJsConns.set(data._sender, conn);
+          }
           this._handleFallbackMsg(data);
         });
       });
 
+      this.peerjs.on("open", () => {
+        // Broadcast presence over PeerJS to existing roster peers
+        const roster = this._getRoster();
+        for (const p of roster) {
+          if (p.peer_id !== this.peerId) {
+            this._connectPeerJs(p.peer_id);
+          }
+        }
+      });
+
       this.peerjs.on("error", () => {});
     } catch (_) {}
+  }
+
+  _connectPeerJs(remotePeerId) {
+    if (!this.peerjs || this.peerJsConns.has(remotePeerId)) {
+      return this.peerJsConns.get(remotePeerId);
+    }
+    try {
+      const cleanTo = remotePeerId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+      const remotePeerJsId = `minuta_${this.publicId}_${cleanTo}`;
+      const conn = this.peerjs.connect(remotePeerJsId);
+      conn.on("open", () => {
+        this.peerJsConns.set(remotePeerId, conn);
+        conn.send({
+          type: "peer_joined",
+          peer_id: this.peerId,
+          display_name: this.displayName,
+          role: this.role,
+          _sender: this.peerId,
+        });
+      });
+      conn.on("data", (data) => {
+        this._handleFallbackMsg(data);
+      });
+      this.peerJsConns.set(remotePeerId, conn);
+      return conn;
+    } catch (_) {
+      return null;
+    }
   }
 
   _getRoster() {
@@ -321,15 +363,24 @@ export class SignalingClient {
       localStorage.setItem(this.storageKey, JSON.stringify({ ...msg, _t: Date.now() }));
     } catch (_) {}
 
-    if (this.peerjs && payload.to) {
-      try {
-        const cleanTo = payload.to.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
-        const remotePeerJsId = `minuta_${this.publicId}_${cleanTo}`;
-        const conn = this.peerjs.connect(remotePeerJsId);
-        conn.on("open", () => {
-          conn.send(msg);
-        });
-      } catch (_) {}
+    if (this.peerjs) {
+      if (payload.to) {
+        const conn = this.peerJsConns.get(payload.to) || this._connectPeerJs(payload.to);
+        if (conn && conn.open) {
+          try {
+            conn.send(msg);
+          } catch (_) {}
+        }
+      } else {
+        // Broadcast to all active PeerJS connections across physical devices
+        for (const conn of this.peerJsConns.values()) {
+          if (conn && conn.open) {
+            try {
+              conn.send(msg);
+            } catch (_) {}
+          }
+        }
+      }
     }
   }
 
