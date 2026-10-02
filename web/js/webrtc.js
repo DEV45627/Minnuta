@@ -282,6 +282,15 @@ export class SignalingClient {
       });
 
       this.peerjs.on("connection", (conn) => {
+        conn.on("open", () => {
+          try {
+            conn.send({
+              type: "welcome",
+              roster: this._getRoster(),
+              _sender: this.peerId,
+            });
+          } catch (_) {}
+        });
         conn.on("data", (data) => {
           if (data && data._sender) {
             this.peerJsConns.set(data._sender, conn);
@@ -291,11 +300,15 @@ export class SignalingClient {
       });
 
       this.peerjs.on("open", () => {
-        // Broadcast presence over PeerJS to existing roster peers
         const roster = this._getRoster();
         for (const p of roster) {
           if (p.peer_id !== this.peerId) {
-            this._connectPeerJs(p.peer_id);
+            this._sendViaPeerJs(p.peer_id, {
+              type: "peer_joined",
+              peer_id: this.peerId,
+              display_name: this.displayName,
+              role: this.role,
+            });
           }
         }
       });
@@ -304,31 +317,43 @@ export class SignalingClient {
     } catch (_) {}
   }
 
-  _connectPeerJs(remotePeerId) {
-    if (!this.peerjs || this.peerJsConns.has(remotePeerId)) {
-      return this.peerJsConns.get(remotePeerId);
-    }
-    try {
-      const cleanTo = remotePeerId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
-      const remotePeerJsId = `minuta_${this.publicId}_${cleanTo}`;
-      const conn = this.peerjs.connect(remotePeerJsId);
-      conn.on("open", () => {
-        this.peerJsConns.set(remotePeerId, conn);
-        conn.send({
-          type: "peer_joined",
-          peer_id: this.peerId,
-          display_name: this.displayName,
-          role: this.role,
-          _sender: this.peerId,
+  _sendViaPeerJs(remotePeerId, msg) {
+    if (!this.peerjs) return;
+    const cleanTo = remotePeerId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 10);
+    const remotePeerJsId = `minuta_${this.publicId}_${cleanTo}`;
+
+    let conn = this.peerJsConns.get(remotePeerId);
+    if (!conn) {
+      try {
+        conn = this.peerjs.connect(remotePeerJsId);
+        conn._pending = [msg];
+        conn.on("open", () => {
+          this.peerJsConns.set(remotePeerId, conn);
+          if (conn._pending) {
+            for (const m of conn._pending) {
+              try { conn.send(m); } catch (_) {}
+            }
+            conn._pending = [];
+          }
         });
-      });
-      conn.on("data", (data) => {
-        this._handleFallbackMsg(data);
-      });
-      this.peerJsConns.set(remotePeerId, conn);
-      return conn;
-    } catch (_) {
-      return null;
+        conn.on("data", (data) => {
+          if (data && data._sender) {
+            this.peerJsConns.set(data._sender, conn);
+          }
+          this._handleFallbackMsg(data);
+        });
+        this.peerJsConns.set(remotePeerId, conn);
+      } catch (_) {}
+      return;
+    }
+
+    if (conn.open) {
+      try {
+        conn.send(msg);
+      } catch (_) {}
+    } else {
+      if (!conn._pending) conn._pending = [];
+      conn._pending.push(msg);
     }
   }
 
@@ -365,19 +390,16 @@ export class SignalingClient {
 
     if (this.peerjs) {
       if (payload.to) {
-        const conn = this.peerJsConns.get(payload.to) || this._connectPeerJs(payload.to);
-        if (conn && conn.open) {
-          try {
-            conn.send(msg);
-          } catch (_) {}
-        }
+        this._sendViaPeerJs(payload.to, msg);
       } else {
-        // Broadcast to all active PeerJS connections across physical devices
         for (const conn of this.peerJsConns.values()) {
           if (conn && conn.open) {
             try {
               conn.send(msg);
             } catch (_) {}
+          } else if (conn) {
+            if (!conn._pending) conn._pending = [];
+            conn._pending.push(msg);
           }
         }
       }
