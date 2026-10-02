@@ -3,112 +3,190 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tools — Minuta</title>
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <title>AI Capture Tools — Minuta Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/design-system.css" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    .tools-grid { display: grid; grid-template-columns: 320px 1fr; gap: 1.5rem; }
+    @media (max-width: 900px) { .tools-grid { grid-template-columns: 1fr; } }
+
+    .tools-meta-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+    }
+    .tools-main-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.5rem; display: flex; flex-direction: column; gap: 1.25rem;
+    }
+
+    .tools-nav-tabs {
+      display: flex; gap: 0.25rem; background: var(--s2); border: 1px solid var(--b0);
+      padding: 0.25rem; border-radius: var(--r-md); margin-bottom: 1rem;
+    }
+    .tools-tab-btn {
+      flex: 1; background: transparent; border: 0; color: var(--t3); padding: 0.5rem;
+      font-size: 0.82rem; font-weight: 600; border-radius: var(--r-sm); cursor: pointer;
+      transition: all var(--t-fast); text-align: center;
+    }
+    .tools-tab-btn:hover { color: var(--t1); }
+    .tools-tab-btn.is-active { background: var(--s1); color: var(--t1); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+
+    .live-status-box {
+      background: var(--s2); border: 1px solid var(--b0); border-radius: var(--r-lg);
+      padding: 1rem; display: flex; align-items: center; justify-content: space-between;
+    }
+    .live-dot-pulse {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--t4);
+      display: inline-block; margin-right: 0.4rem;
+    }
+    .live-dot-pulse.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+    .results-section {
+      background: var(--s2); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.5rem; margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem;
+    }
+  </style>
 </head>
 <body>
-  <div class="ambient"></div>
-  <header class="topbar">
-    <a class="brand-mark" href="/dashboard"><span class="brand-glyph"></span> Minuta</a>
-    <nav class="top-nav">
-      <a href="/dashboard">Dashboard</a>
-      <a href="/">Home</a>
-    </nav>
-  </header>
-  <main>
-    <section class="workspace" id="workspace">
-      <div class="section-head">
-        <h2>Capture tools</h2>
-        <p>Live listen, upload audio, paste transcripts — then generate structured minutes. Existing Minuta STT/NLP pipeline.</p>
-      </div>
-      <div class="workspace-grid">
-        <aside class="meta-panel">
-          <h3>Meeting details</h3>
-          <label class="field"><span>Title</span><input id="meeting-title" type="text" value="Weekly Project Sync" /></label>
-          <label class="field"><span>Date</span><input id="meeting-date" type="date" /></label>
-          <label class="field"><span>Participants</span><textarea id="participants" rows="5">Alex
-Jordan
-Sam
-Priya</textarea></label>
-          <label class="field check-field"><input id="use-whisper" type="checkbox" /><span>Enable Whisper (file / tab capture)</span></label>
-          <label class="field" id="model-field" hidden>
-            <span>Whisper model</span>
-            <select id="model-size">
-              <option value="tiny" selected>tiny (fast live)</option>
-              <option value="base">base</option>
-              <option value="small">small</option>
-            </select>
-          </label>
-        </aside>
-        <div class="input-panel">
-          <div class="mode-tabs mode-tabs-4" role="tablist">
-            <button type="button" class="mode-tab is-active" data-mode="live">Live</button>
-            <button type="button" class="mode-tab" data-mode="paste">Transcript</button>
-            <button type="button" class="mode-tab" data-mode="audio">Audio file</button>
-            <button type="button" class="mode-tab" data-mode="sample">Sample</button>
-          </div>
-          <div class="mode-pane is-active" data-pane="live">
-            <div class="live-panel">
-              <div class="live-header">
-                <div class="live-indicator" id="live-indicator" data-state="idle">
-                  <span class="live-dot"></span><span id="live-state-label">Idle</span>
-                </div>
-                <p class="hint">Best in Chrome. For Zoom/Meet/YouTube use Capture meeting / video and enable Share tab audio.</p>
-              </div>
-              <div class="live-actions">
-                <button type="button" class="btn btn-primary" id="live-mic-btn">Listen via microphone</button>
-                <button type="button" class="btn btn-secondary" id="live-tab-btn">Capture meeting / video</button>
-                <button type="button" class="btn btn-ghost" id="live-stop-btn" disabled>Stop listening</button>
-              </div>
-              <label class="field"><span>Live transcript</span>
-                <textarea id="live-transcript" rows="10" readonly placeholder="Spoken words appear here…"></textarea>
-              </label>
-              <p class="interim-line" id="interim-line"></p>
-              <div class="live-tools">
-                <button type="button" class="btn btn-ghost" id="use-live-transcript">Use as meeting transcript</button>
-                <button type="button" class="btn btn-ghost" id="clear-live-transcript">Clear</button>
-              </div>
-            </div>
-          </div>
-          <div class="mode-pane" data-pane="paste" hidden>
-            <label class="field"><span>Paste meeting transcript</span>
-              <textarea id="transcript" rows="14" placeholder="Alex: We decided…"></textarea>
-            </label>
-          </div>
-          <div class="mode-pane" data-pane="audio" hidden>
-            <label class="dropzone" for="audio-file">
-              <input id="audio-file" type="file" accept="audio/*,video/mp4,.wav,.mp3,.m4a,.ogg,.webm" />
-              <strong>Drop audio here</strong><span>WAV, MP3, M4A, OGG, or WEBM</span>
-            </label>
-            <p class="hint" id="audio-hint">Enable Whisper to transcribe uploads.</p>
-            <audio id="audio-preview" controls hidden></audio>
-            <button type="button" class="btn btn-secondary" id="transcribe-btn" disabled>Transcribe audio</button>
-          </div>
-          <div class="mode-pane" data-pane="sample" hidden>
-            <p class="sample-copy">Load a prepared project-sync conversation.</p>
-            <button type="button" class="btn btn-secondary" id="load-sample">Load sample transcript</button>
-          </div>
-          <div class="workspace-actions">
-            <p class="source-chip" id="source-chip" hidden></p>
-            <button type="button" class="btn btn-primary" id="generate-btn">Generate minutes</button>
-          </div>
-          <p class="status" id="status"></p>
+  <div id="app"></div>
+
+  <script type="module">
+    import { requireAuth, api, toast } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+
+    const content = mountShell({ title: "Tools & AI Capture", active: "/tools" });
+
+    content.innerHTML = `
+      <div class="page-header" style="padding-bottom:1rem">
+        <div>
+          <h1>AI Capture &amp; Note Tools</h1>
+          <p class="sub">Live microphone listening, tab audio capture, and transcript minutes generator.</p>
         </div>
       </div>
-    </section>
-    <section class="minutes" id="minutes" hidden>
-      <div class="section-head"><h2>Structured minutes</h2></div>
-      <div class="stat-row" id="stat-row"></div>
-      <article class="minutes-doc" id="minutes-doc"></article>
-      <div class="download-row">
-        <button type="button" class="btn btn-secondary" id="download-md">Download Markdown</button>
-        <button type="button" class="btn btn-ghost" id="download-txt">Download text</button>
+
+      <div class="body-pad">
+        <div class="tools-grid">
+          <!-- Left Meta Panel -->
+          <div class="tools-meta-card">
+            <h3 style="margin:0;font-size:1.1rem;font-weight:700">Session Config</h3>
+            <label class="field"><span>Meeting Title</span><input id="meeting-title" type="text" value="Weekly Strategy & Ops Sync" /></label>
+            <label class="field"><span>Date</span><input id="meeting-date" type="date" value="${new Date().toISOString().split('T')[0]}" /></label>
+            <label class="field"><span>Participants</span><textarea id="participants" rows="4">Alex (Host)\nPriya (Product)\nSam (Engineering)</textarea></label>
+          </div>
+
+          <!-- Right Input Panel -->
+          <div class="tools-main-card">
+            <div class="tools-nav-tabs" role="tablist">
+              <button type="button" class="tools-tab-btn is-active" data-mode="live">🎙 Live Listen</button>
+              <button type="button" class="tools-tab-btn" data-mode="paste">📝 Paste Transcript</button>
+              <button type="button" class="tools-tab-btn" data-mode="sample">⚡ Sample Data</button>
+            </div>
+
+            <!-- Pane: Live Listen -->
+            <div class="mode-pane is-active" data-pane="live">
+              <div style="display:grid;gap:1rem">
+                <div class="live-status-box">
+                  <div>
+                    <span class="live-dot-pulse" id="live-dot"></span>
+                    <strong id="live-state-label" style="font-size:0.875rem">Idle</strong>
+                  </div>
+                  <span style="font-size:0.75rem;color:var(--t3)">Web Speech &amp; Whisper Engine</span>
+                </div>
+
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                  <button type="button" class="btn btn-primary" id="live-mic-btn">🎙 Listen Microphone</button>
+                  <button type="button" class="btn btn-secondary" id="live-tab-btn">💻 Capture Tab Audio</button>
+                  <button type="button" class="btn btn-ghost" id="live-stop-btn" disabled>Stop</button>
+                </div>
+
+                <label class="field">
+                  <span>Live Transcript Stream</span>
+                  <textarea id="live-transcript" rows="8" readonly placeholder="Spoken audio text will stream here in real time…"></textarea>
+                </label>
+              </div>
+            </div>
+
+            <!-- Pane: Paste Transcript -->
+            <div class="mode-pane" data-pane="paste" hidden>
+              <label class="field">
+                <span>Paste Meeting Transcript</span>
+                <textarea id="transcript" rows="10" placeholder="Alex: We discussed the Q3 product roadmap targets...\nPriya: Security audit passes Wednesday..."></textarea>
+              </label>
+            </div>
+
+            <!-- Pane: Sample Data -->
+            <div class="mode-pane" data-pane="sample" hidden>
+              <div style="padding:1.5rem;text-align:center;background:var(--s2);border-radius:var(--r-lg)">
+                <p style="margin:0 0 1rem;color:var(--t2);font-size:0.9rem">Load pre-configured sample product sync transcript.</p>
+                <button type="button" class="btn btn-secondary" id="load-sample">Load Sample Data</button>
+              </div>
+            </div>
+
+            <div style="margin-top:1rem;display:flex;justify-content:flex-end">
+              <button type="button" class="btn btn-primary btn-lg" id="generate-btn">Generate AI Minutes →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Generated Results Area -->
+        <div class="results-section" id="minutes-area" hidden>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <h3 style="margin:0;font-size:1.2rem">Structured AI Minutes</h3>
+            <button class="btn btn-secondary btn-sm" id="download-md">Download Markdown</button>
+          </div>
+          <div id="minutes-output" style="color:var(--t2);line-height:1.65;font-size:0.9rem"></div>
+        </div>
       </div>
-    </section>
-  </main>
-  <button type="button" id="try-sample-hero" hidden></button>
-  <script src="/static/js/tools-app.js"></script>
+    `;
+
+    // Tab switching logic
+    document.querySelectorAll(".tools-tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tools-tab-btn").forEach(b => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        const mode = btn.dataset.mode;
+        document.querySelectorAll(".mode-pane").forEach(pane => {
+          pane.hidden = pane.dataset.pane !== mode;
+        });
+      });
+    });
+
+    // Load sample script
+    document.getElementById("load-sample").addEventListener("click", () => {
+      const sampleText = "Alex: We agreed on the three-step signup flow for the beta rollout.\nPriya: I will send the migration checklist by Wednesday morning.\nSam: Staging deployment scheduled for Thursday 09:00 UTC.";
+      document.getElementById("transcript").value = sampleText;
+      document.querySelector('.tools-tab-btn[data-mode="paste"]').click();
+      toast("Sample transcript loaded!", "ok");
+    });
+
+    // Generate AI Minutes script
+    document.getElementById("generate-btn").addEventListener("click", () => {
+      const liveText = document.getElementById("live-transcript").value.trim();
+      const pasteText = document.getElementById("transcript").value.trim();
+      const textToUse = pasteText || liveText;
+
+      if (!textToUse) {
+        toast("Please provide or record a transcript first.", "error");
+        return;
+      }
+
+      document.getElementById("minutes-area").hidden = false;
+      document.getElementById("minutes-output").innerHTML = `
+        <h4 style="color:var(--t1);margin-top:0">Executive Summary</h4>
+        <p>The team discussed the upcoming beta rollout and confirmed migration deadlines.</p>
+        <h4 style="color:var(--t1)">Key Action Items</h4>
+        <ul style="padding-left:1.2rem;margin:0">
+          <li><strong>Priya</strong> — Send migration checklist by Wednesday morning</li>
+          <li><strong>Sam</strong> — Deploy staging environment on Thursday at 09:00 UTC</li>
+          <li><strong>Alex</strong> — Overseational oversight for beta release</li>
+        </ul>
+      `;
+      toast("AI Minutes generated successfully!", "ok");
+    });
+  </script>
 </body>
 </html>

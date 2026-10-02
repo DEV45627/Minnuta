@@ -3,69 +3,191 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Meetings — Minuta</title>
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <title>Meetings — Minuta Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/design-system.css" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    .meetings-stats {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;
+    }
+    @media (max-width: 800px) { .meetings-stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-lg);
+      padding: 1rem 1.25rem; transition: border-color var(--t-fast);
+    }
+    .stat-card:hover { border-color: var(--b2); }
+    .stat-val { font-size: 1.6rem; font-weight: 800; color: var(--t1); margin-bottom: 0.2rem; }
+    .stat-lbl { font-size: 0.78rem; color: var(--t3); font-weight: 500; }
+
+    .toolbar-row {
+      display: flex; gap: 1rem; align-items: center; justify-content: space-between;
+      margin-bottom: 1.25rem; flex-wrap: wrap;
+    }
+    .filter-tabs { display: flex; gap: 0.35rem; background: var(--s2); padding: 0.25rem; border-radius: var(--r-md); border: 1px solid var(--b0); }
+    .filter-btn {
+      background: transparent; border: 0; color: var(--t3); padding: 0.4rem 0.85rem;
+      border-radius: var(--r-sm); font-size: 0.8125rem; font-weight: 600; cursor: pointer;
+      transition: all var(--t-fast);
+    }
+    .filter-btn:hover { color: var(--t1); }
+    .filter-btn.active { background: var(--s1); color: var(--t1); box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+
+    .search-input-wrap { position: relative; min-width: 260px; }
+    .search-input-wrap input {
+      width: 100%; background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-md);
+      padding: 0.5rem 0.85rem 0.5rem 2.2rem; color: var(--t1); font-size: 0.85rem; outline: none;
+    }
+    .search-input-wrap input:focus { border-color: var(--accent); }
+    .search-icon { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--t3); font-size: 0.85rem; pointer-events: none; }
+
+    .meetings-grid { display: grid; gap: 0.85rem; }
+    .meeting-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.25rem 1.5rem; display: flex; align-items: center; justify-content: space-between;
+      gap: 1.5rem; transition: border-color var(--t-fast), transform var(--t-fast); flex-wrap: wrap;
+    }
+    .meeting-card:hover { border-color: var(--b2); transform: translateY(-1px); }
+    .mc-info h3 { margin: 0 0 0.35rem; font-size: 1rem; font-weight: 700; color: var(--t1); }
+    .mc-meta { display: flex; gap: 1rem; align-items: center; font-size: 0.8125rem; color: var(--t3); flex-wrap: wrap; }
+    .mc-tags { display: flex; gap: 0.4rem; align-items: center; }
+    .mc-actions { display: flex; gap: 0.5rem; align-items: center; }
+  </style>
 </head>
 <body>
   <div id="app"></div>
+
   <script type="module">
     import { requireAuth, api, formatWhen, toast } from "/static/js/api.js";
     import { mountShell } from "/static/js/shell.js";
     if (!requireAuth()) throw new Error("auth");
+
     const content = mountShell({ title: "Meetings", active: "/meetings" });
     const params = new URLSearchParams(location.search);
-    const filter = params.get("filter") || "all";
-    const q = params.get("q") || "";
+    let currentFilter = params.get("filter") || "all";
+    let searchQuery = params.get("q") || "";
+    let allMeetings = [];
 
     content.innerHTML = `
-      <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+      <div class="page-header" style="padding-bottom:1rem">
         <div>
-          <h1 style="font-family:var(--font-display);margin:0">Meeting history</h1>
-          <p class="muted">Filter and open past or upcoming meetings.</p>
+          <h1>Meeting History</h1>
+          <p class="sub">View, filter, and access real-time meeting sessions and AI outputs.</p>
         </div>
-        <a class="btn btn-primary" href="/meetings/create">+ New Meeting</a>
+        <div class="page-header-actions">
+          <a class="btn btn-primary" href="/meetings/create">+ Schedule Meeting</a>
+        </div>
       </div>
-      <div class="tabs-row" id="filters">
-        ${["all","upcoming","completed","recorded","has_transcript","has_notes"].map(f =>
-          `<button data-f="${f}" class="${f===filter?"active":""}">${f.replace("_"," ")}</button>`
-        ).join("")}
+
+      <div class="body-pad">
+        <div class="meetings-stats">
+          <div class="stat-card"><div class="stat-val" id="st-total">0</div><div class="stat-lbl">Total Meetings</div></div>
+          <div class="stat-card"><div class="stat-val" id="st-completed" style="color:var(--accent)">0</div><div class="stat-lbl">Completed</div></div>
+          <div class="stat-card"><div class="stat-val" id="st-scheduled" style="color:var(--blue)">0</div><div class="stat-lbl">Scheduled</div></div>
+          <div class="stat-card"><div class="stat-val" id="st-transcripts">0</div><div class="stat-lbl">AI Transcripts</div></div>
+        </div>
+
+        <div class="toolbar-row">
+          <div class="filter-tabs" id="filter-tabs">
+            <button class="filter-btn ${currentFilter==='all'?'active':''}" data-f="all">All Meetings</button>
+            <button class="filter-btn ${currentFilter==='completed'?'active':''}" data-f="completed">Completed</button>
+            <button class="filter-btn ${currentFilter==='scheduled'?'active':''}" data-f="scheduled">Scheduled</button>
+            <button class="filter-btn ${currentFilter==='recorded'?'active':''}" data-f="recorded">With Notes</button>
+          </div>
+
+          <div class="search-input-wrap">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="search-input" placeholder="Search meeting title..." value="${searchQuery}" />
+          </div>
+        </div>
+
+        <div class="meetings-grid" id="meetings-list">
+          <div style="padding:3rem;text-align:center;color:var(--t3)">Loading meetings…</div>
+        </div>
       </div>
-      <div class="meeting-list" id="list"></div>
     `;
 
-    document.getElementById("filters").addEventListener("click", (e) => {
-      const btn = e.target.closest("button[data-f]");
-      if (!btn) return;
-      const f = btn.dataset.f;
-      location.href = f === "all" ? "/meetings" : `/meetings?filter=${f}`;
-    });
+    async function loadMeetings() {
+      try {
+        allMeetings = await api("/api/meetings");
+        updateStats();
+        renderList();
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    }
 
-    try {
-      const qs = new URLSearchParams();
-      if (filter !== "all") qs.set("filter", filter);
-      if (q) qs.set("q", q);
-      const meetings = await api(`/api/meetings?${qs}`);
-      const list = document.getElementById("list");
-      if (!meetings.length) {
-        list.innerHTML = `<div class="empty">No meetings found.</div>`;
-      } else {
-        list.innerHTML = meetings.map(m => `
-          <div class="meeting-row">
-            <div>
-              <strong>${m.title}</strong>
-              <div class="muted">${formatWhen(m.scheduled_start || m.created_at)} · ${m.duration_minutes} min ·
-                transcript ${m.has_transcript ? "✓" : "—"} · notes ${m.has_notes ? "✓" : "—"}
-                · <span class="badge ${m.status}">${m.status}</span>
+    function updateStats() {
+      document.getElementById("st-total").textContent = allMeetings.length;
+      document.getElementById("st-completed").textContent = allMeetings.filter(m => m.status === 'completed' || m.has_notes).length;
+      document.getElementById("st-scheduled").textContent = allMeetings.filter(m => m.status === 'scheduled').length;
+      document.getElementById("st-transcripts").textContent = allMeetings.filter(m => m.has_transcript).length;
+    }
+
+    function renderList() {
+      const listEl = document.getElementById("meetings-list");
+      let filtered = allMeetings.filter(m => {
+        if (currentFilter === "completed") return m.status === "completed" || m.has_notes;
+        if (currentFilter === "scheduled") return m.status === "scheduled";
+        if (currentFilter === "recorded") return m.has_notes || m.has_transcript;
+        return true;
+      });
+
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        filtered = filtered.filter(m => (m.title || "").toLowerCase().includes(q));
+      }
+
+      if (!filtered.length) {
+        listEl.innerHTML = `
+          <div class="card" style="text-align:center;padding:3.5rem 2rem">
+            <p style="color:var(--t3);margin:0 0 1rem;font-size:0.95rem">No meetings found matching your criteria.</p>
+            <a class="btn btn-secondary btn-sm" href="/meetings/create">Schedule New Meeting</a>
+          </div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(m => `
+        <div class="meeting-card">
+          <div class="mc-info">
+            <h3>${m.title}</h3>
+            <div class="mc-meta">
+              <span>📅 ${formatWhen(m.scheduled_start || m.created_at)}</span>
+              <span>⏱ ${m.duration_minutes || 30} mins</span>
+              <div class="mc-tags">
+                <span class="badge ${m.status === 'live' ? 'badge-emerald' : ''}">${m.status || 'scheduled'}</span>
+                ${m.has_transcript ? '<span class="badge badge-emerald">Transcript</span>' : ''}
+                ${m.has_notes ? '<span class="badge badge-emerald">AI Notes</span>' : ''}
               </div>
             </div>
-            <a class="btn btn-secondary" href="/meetings/${m.public_id}">Open</a>
-          </div>`).join("");
-      }
-    } catch (err) {
-      toast(err.message, "error");
+          </div>
+          <div class="mc-actions">
+            <a class="btn btn-secondary btn-sm" href="/meetings/${m.public_id}">View Details</a>
+            <a class="btn btn-primary btn-sm" href="/meeting/${m.public_id}">Join Session →</a>
+          </div>
+        </div>
+      `).join("");
     }
+
+    // Filter Tab Clicks
+    document.getElementById("filter-tabs").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-f]");
+      if (!btn) return;
+      document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentFilter = btn.dataset.f;
+      renderList();
+    });
+
+    // Instant Live Search
+    document.getElementById("search-input").addEventListener("input", (e) => {
+      searchQuery = e.target.value.trim();
+      renderList();
+    });
+
+    loadMeetings();
   </script>
 </body>
 </html>

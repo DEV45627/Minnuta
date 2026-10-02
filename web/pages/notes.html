@@ -3,32 +3,82 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Notes — Minuta</title>
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <title>Meeting Notes — Minuta Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/design-system.css" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    .notes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
+    @media (max-width: 800px) { .notes-grid { grid-template-columns: 1fr; } }
+    .note-card {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between;
+      gap: 1.25rem; transition: border-color var(--t-fast), transform var(--t-fast);
+    }
+    .note-card:hover { border-color: var(--b2); transform: translateY(-2px); }
+    .note-card h3 { margin: 0 0 0.4rem; font-size: 1.05rem; font-weight: 700; color: var(--t1); }
+    .note-preview { font-size: 0.875rem; color: var(--t2); line-height: 1.6; margin: 0; }
+  </style>
 </head>
 <body>
   <div id="app"></div>
+
   <script type="module">
     import { requireAuth, api, formatWhen, toast } from "/static/js/api.js";
     import { mountShell } from "/static/js/shell.js";
     if (!requireAuth()) throw new Error("auth");
-    const content = mountShell({ title: "Notes", active: "/notes" });
-    content.innerHTML = `<h1 style="font-family:var(--font-display)">Meeting notes</h1><div id="list" class="meeting-list"></div>`;
-    try {
-      const notes = await api("/api/notes");
-      document.getElementById("list").innerHTML = notes.length ? notes.map(n => `
-        <a class="meeting-row" href="/meetings/${n.meeting_public_id}" style="text-decoration:none;color:inherit">
-          <div>
-            <strong>${n.meeting_title}</strong>
-            <div class="muted">${formatWhen(n.date)} · ${n.action_item_count} action items · updated ${formatWhen(n.updated_at)}</div>
-            <p class="muted">${n.summary_preview || ""}</p>
+
+    const content = mountShell({ title: "AI Notes", active: "/notes" });
+
+    content.innerHTML = `
+      <div class="page-header" style="padding-bottom:1rem">
+        <div>
+          <h1>Executive Meeting Notes</h1>
+          <p class="sub">Structured summaries, decision points, and automated action item checklists.</p>
+        </div>
+      </div>
+
+      <div class="body-pad">
+        <div class="notes-grid" id="notes-list">
+          <div style="color:var(--t3)">Loading AI notes…</div>
+        </div>
+      </div>
+    `;
+
+    async function loadNotes() {
+      try {
+        const notes = await api("/api/notes");
+        const listEl = document.getElementById("notes-list");
+
+        if (!notes.length) {
+          listEl.innerHTML = `
+            <div class="card" style="grid-column:1/-1;text-align:center;padding:3.5rem 2rem">
+              <p style="color:var(--t3);margin:0 0 1rem;font-size:0.95rem">No notes generated yet.</p>
+              <a class="btn btn-secondary btn-sm" href="/tools">Generate AI Notes →</a>
+            </div>`;
+          return;
+        }
+
+        listEl.innerHTML = notes.map(n => `
+          <div class="note-card">
+            <div>
+              <h3>${n.meeting_title || 'Meeting Summary'}</h3>
+              <div style="font-size:0.78rem;color:var(--t3);margin-bottom:0.85rem">📅 ${formatWhen(n.date)} · ${n.action_item_count || 0} Action Items</div>
+              <p class="note-preview">${n.summary_preview || 'Executive summary ready.'}</p>
+            </div>
+            <div>
+              <a class="btn btn-secondary btn-sm" style="width:100%" href="/meetings/${n.meeting_public_id}">Open Full Notes &amp; Minutes →</a>
+            </div>
           </div>
-        </a>`).join("") : `<div class="empty">No notes yet. Generate AI notes from a meeting transcript.</div>`;
-    } catch (err) {
-      toast(err.message, "error");
+        `).join("");
+      } catch (err) {
+        toast(err.message, "error");
+      }
     }
+
+    loadNotes();
   </script>
 </body>
 </html>

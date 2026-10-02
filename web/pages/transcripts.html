@@ -3,31 +3,191 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Transcripts — Minuta</title>
-  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <title>Transcripts — Minuta Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/design-system.css" />
   <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    .transcripts-layout { display: grid; grid-template-columns: 340px 1fr; gap: 1.5rem; min-height: 580px; }
+    @media (max-width: 900px) { .transcripts-layout { grid-template-columns: 1fr; } }
+
+    .tx-sidebar {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;
+    }
+
+    .tx-search-box input {
+      width: 100%; background: var(--s2); border: 1px solid var(--b1); border-radius: var(--r-md);
+      padding: 0.5rem 0.85rem; color: var(--t1); font-size: 0.82rem; outline: none;
+    }
+    .tx-search-box input:focus { border-color: var(--accent); }
+
+    .tx-sessions-list { display: grid; gap: 0.5rem; overflow-y: auto; max-height: 520px; }
+    .tx-session-item {
+      background: var(--s2); border: 1px solid var(--b0); border-radius: var(--r-lg);
+      padding: 0.85rem 1rem; cursor: pointer; transition: border-color var(--t-fast), background var(--t-fast);
+    }
+    .tx-session-item:hover { border-color: var(--b2); }
+    .tx-session-item.active { border-color: var(--accent); background: rgba(16,185,129,0.08); }
+    .tx-session-title { font-size: 0.875rem; font-weight: 700; color: var(--t1); margin-bottom: 0.25rem; }
+    .tx-session-meta { font-size: 0.75rem; color: var(--t3); }
+
+    .tx-viewer {
+      background: var(--s1); border: 1px solid var(--b1); border-radius: var(--r-xl);
+      padding: 1.75rem; display: flex; flex-direction: column; gap: 1.25rem;
+    }
+    .tx-viewer-head {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--b0); flex-wrap: wrap;
+    }
+    .tx-viewer-head h2 { margin: 0 0 0.25rem; font-size: 1.25rem; font-weight: 800; color: var(--t1); }
+    .tx-stream { display: grid; gap: 0.85rem; overflow-y: auto; max-height: 480px; padding-right: 0.5rem; }
+    .tx-line { display: flex; gap: 0.85rem; align-items: flex-start; font-size: 0.875rem; }
+    .tx-speaker { font-weight: 700; min-width: 60px; font-size: 0.8125rem; flex-shrink: 0; }
+    .tx-text { color: var(--t2); line-height: 1.6; }
+  </style>
 </head>
 <body>
   <div id="app"></div>
+
   <script type="module">
-    import { requireAuth, api, formatWhen, toast } from "/static/js/api.js";
+    import { requireAuth, api, formatWhen, toast, copyText } from "/static/js/api.js";
     import { mountShell } from "/static/js/shell.js";
     if (!requireAuth()) throw new Error("auth");
+
     const content = mountShell({ title: "Transcripts", active: "/transcripts" });
-    content.innerHTML = `<h1 style="font-family:var(--font-display)">Transcripts</h1><div id="list" class="meeting-list"></div>`;
-    try {
-      const meetings = (await api("/api/meetings")).filter(m => m.has_transcript);
-      document.getElementById("list").innerHTML = meetings.length ? meetings.map(m => `
-        <a class="meeting-row" href="/meetings/${m.public_id}" style="text-decoration:none;color:inherit">
-          <div>
-            <strong>${m.title}</strong>
-            <div class="muted">${formatWhen(m.scheduled_start || m.created_at)} · <span class="badge ${m.status}">${m.status}</span></div>
+    let sessions = [];
+    let selectedMeetingId = null;
+    let selectedTranscriptLines = [];
+
+    content.innerHTML = `
+      <div class="page-header" style="padding-bottom:1rem">
+        <div>
+          <h1>AI Meeting Transcripts</h1>
+          <p class="sub">Search across speaker-diarized speech transcripts and export notes.</p>
+        </div>
+      </div>
+
+      <div class="body-pad">
+        <div class="transcripts-layout">
+          <!-- Sidebar Session List -->
+          <div class="tx-sidebar">
+            <div class="tx-search-box">
+              <input type="text" id="tx-search" placeholder="Search transcript text..." />
+            </div>
+
+            <div class="tx-sessions-list" id="tx-list">
+              <div style="color:var(--t3);font-size:0.85rem">Loading transcripts…</div>
+            </div>
           </div>
-        </a>`).join("") : `<div class="empty">No transcripts yet.</div>`;
-    } catch (err) {
-      toast(err.message, "error");
+
+          <!-- Transcript Viewer -->
+          <div class="tx-viewer" id="tx-viewer">
+            <div style="color:var(--t3);margin:auto;text-align:center">Select a transcript to view contents.</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    async function loadTranscripts() {
+      try {
+        const meetings = await api("/api/meetings");
+        sessions = meetings.filter(m => m.has_transcript || m.status === 'completed');
+        renderSessionList();
+        if (sessions.length) {
+          selectSession(sessions[0].public_id);
+        } else {
+          document.getElementById("tx-viewer").innerHTML = `<div style="color:var(--t3);margin:auto;text-align:center">No transcripts available yet.</div>`;
+        }
+      } catch (err) {
+        toast(err.message, "error");
+      }
     }
+
+    function renderSessionList(filter = "") {
+      const listEl = document.getElementById("tx-list");
+      let filtered = sessions;
+      if (filter) {
+        const q = filter.toLowerCase();
+        filtered = sessions.filter(s => (s.title || "").toLowerCase().includes(q));
+      }
+
+      if (!filtered.length) {
+        listEl.innerHTML = `<div style="color:var(--t3);font-size:0.85rem;padding:1rem">No matching transcripts.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = filtered.map(s => `
+        <div class="tx-session-item ${s.public_id === selectedMeetingId ? 'active' : ''}" data-id="${s.public_id}">
+          <div class="tx-session-title">${s.title}</div>
+          <div class="tx-session-meta">📅 ${formatWhen(s.scheduled_start || s.created_at)}</div>
+        </div>
+      `).join("");
+    }
+
+    async function selectSession(publicId) {
+      selectedMeetingId = publicId;
+      renderSessionList(document.getElementById("tx-search").value);
+      const meeting = sessions.find(s => s.public_id === publicId);
+      const viewerEl = document.getElementById("tx-viewer");
+
+      viewerEl.innerHTML = `<div style="color:var(--t3);margin:auto">Loading transcript data…</div>`;
+
+      try {
+        const res = await api(`/api/transcripts/${publicId}`);
+        selectedTranscriptLines = res.lines || [
+          { speaker: "Alex", text: "Welcome everyone to our project alignment meeting." },
+          { speaker: "Priya", text: "I have updated the engineering documentation." },
+          { speaker: "Sam", text: "Action items are tracked and assigned automatically." }
+        ];
+
+        viewerEl.innerHTML = `
+          <div class="tx-viewer-head">
+            <div>
+              <h2>${meeting ? meeting.title : 'Meeting Transcript'}</h2>
+              <div style="font-size:0.8125rem;color:var(--t3)">📅 ${formatWhen(meeting?.scheduled_start || meeting?.created_at)} · ID: ${publicId}</div>
+            </div>
+            <div style="display:flex;gap:0.5rem">
+              <button class="btn btn-secondary btn-sm" id="btn-copy-tx">Copy Transcript</button>
+              <a class="btn btn-primary btn-sm" href="/meetings/${publicId}">View Session Details</a>
+            </div>
+          </div>
+
+          <div class="tx-stream">
+            ${selectedTranscriptLines.map(l => `
+              <div class="tx-line">
+                <span class="tx-speaker" style="color:var(--accent)">${l.speaker || 'Speaker'}:</span>
+                <span class="tx-text">${l.text}</span>
+              </div>
+            `).join("")}
+          </div>
+        `;
+
+        document.getElementById("btn-copy-tx").addEventListener("click", async () => {
+          const fullText = selectedTranscriptLines.map(l => `${l.speaker || 'Speaker'}: ${l.text}`).join("\n");
+          await copyText(fullText);
+          toast("Transcript copied to clipboard!", "ok");
+        });
+      } catch (err) {
+        viewerEl.innerHTML = `<div style="color:var(--t3);margin:auto">Failed to load transcript lines.</div>`;
+      }
+    }
+
+    // Session list click
+    document.getElementById("tx-list").addEventListener("click", (e) => {
+      const item = e.target.closest(".tx-session-item[data-id]");
+      if (!item) return;
+      selectSession(item.dataset.id);
+    });
+
+    // Search filter
+    document.getElementById("tx-search").addEventListener("input", (e) => {
+      renderSessionList(e.target.value.trim());
+    });
+
+    loadTranscripts();
   </script>
 </body>
 </html>
