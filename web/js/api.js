@@ -40,35 +40,52 @@ export async function api(path, options = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   let res = null;
+  let text = "";
   try {
     res = await fetch(path, { ...options, headers });
+    text = await res.text();
   } catch (err) {
     // Network offline or static host fallback
   }
 
-  // Handle live API server response
-  if (res && res.status !== 404) {
-    let data = null;
-    const text = await res.text();
+  // Check if response is HTML or Vercel 404/405 static page error
+  const isHtmlOrVercel404 =
+    !res ||
+    res.status === 404 ||
+    res.status === 405 ||
+    !text ||
+    text.startsWith("<!DOCTYPE") ||
+    text.includes("NOT_FOUND") ||
+    text.includes("could not be found");
+
+  // Handle live backend API response if available
+  if (res && res.ok && !isHtmlOrVercel404) {
     try {
-      data = text ? JSON.parse(text) : null;
+      return JSON.parse(text);
+    } catch {
+      return { message: text };
+    }
+  }
+
+  // Handle structured backend error JSON (e.g. 400 Bad Request with { detail: "Email taken" })
+  if (res && !res.ok && !isHtmlOrVercel404) {
+    let data = null;
+    try {
+      data = JSON.parse(text);
     } catch {
       data = { detail: text };
     }
-    if (!res.ok) {
-      const detail = data?.detail;
-      const msg = Array.isArray(detail)
-        ? detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
-        : detail || res.statusText || "Request failed";
-      const err = new Error(msg);
-      err.status = res.status;
-      err.data = data;
-      throw err;
-    }
-    return data;
+    const detail = data?.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
+      : detail || res.statusText || "Request failed";
+    const err = new Error(msg);
+    err.status = res.status;
+    err.data = data;
+    throw err;
   }
 
-  // Seamless fallback for Vercel static frontend deployment (when /api/* returns 404)
+  // Seamless fallback for Vercel static frontend deployment (when /api/* hits static 404/405)
   if (path.includes("/api/auth/register")) {
     const body = options.body ? JSON.parse(options.body) : {};
     const user = {
