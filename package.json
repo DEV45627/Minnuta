@@ -1,0 +1,6 @@
+{
+  "name": "minuta-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Minuta static frontend for Vercel (backend runs separately on VPS/Docker)"
+}

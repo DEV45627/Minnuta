@@ -1,0 +1,78 @@
+# =============================================================================
+# Vercel deploys ONLY the static frontend (web/). This file excludes the Python
+# backend and ML stack so Vercel does not bundle ~6 GB of pip dependencies.
+# Run the API with Docker/VPS — see docs/VPS_DEPLOY.md
+# =============================================================================
+
+# --- Python backend (NOT for Vercel) ---
+server.py
+app.py
+requirements.txt
+requirements-vercel.txt
+backend
+backend/**
+src
+src/**
+samples
+samples/**
+
+# --- Python env / cache ---
+.venv
+venv
+env
+__pycache__
+**/__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+
+# --- Local data ---
+.env
+.env.*
+!.env.example
+minuta.db
+*.db
+*.sqlite
+storage
+storage/**
+data
+data/**
+
+# --- Docker / VPS (deploy backend separately) ---
+Dockerfile
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+deploy
+deploy/**
+
+# --- Media / large binaries ---
+*.wav
+*.mp3
+*.m4a
+*.ogg
+*.webm
+*.mp4
+*.pdf
+*.zip
+*.tar
+*.gz
+
+# --- Dev docs & scripts ---
+docs
+docs/**
+DEPLOYMENT.md
+README.md
+setup.bat
+run.bat
+scripts
+scripts/**
+
+# --- Git / IDE ---
+.git
+.idea
+.vscode
+.DS_Store
+
+# --- Vercel metadata ---
+.vercel

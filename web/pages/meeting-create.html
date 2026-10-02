@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create Meeting — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, toast, copyText, shareMeetingLink, inviteCardHtml } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+    const content = mountShell({ title: "Create Meeting", active: "/meetings" });
+    content.innerHTML = `
+      <h1 style="font-family:var(--font-display)">New meeting</h1>
+      <p class="muted">Schedule a meeting and get a shareable Minuta link guests can open with one click.</p>
+      <form class="card form-stack" id="create-form" style="max-width:640px">
+        <label class="field"><span>Meeting title</span><input name="title" required placeholder="M.Sc. Capstone Project Discussion" /></label>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem">
+          <label class="field"><span>Date</span><input type="date" name="date" required /></label>
+          <label class="field"><span>Start time</span><input type="time" name="time" required /></label>
+          <label class="field"><span>Duration (min)</span><input type="number" name="duration_minutes" value="60" min="5" max="480" /></label>
+        </div>
+        <label class="field"><span>Description</span><textarea name="description" rows="3"></textarea></label>
+        <label class="field"><span>Agenda</span><textarea name="agenda" rows="4" placeholder="1. Updates&#10;2. Decisions&#10;3. Next steps"></textarea></label>
+        <label class="field"><span>Participants (one per line)</span><textarea name="participants" rows="4"></textarea></label>
+        <label class="field"><span>Tags (comma separated)</span><input name="tags" placeholder="capstone, product" /></label>
+        <label class="field"><span>Optional join password</span><input name="join_password" type="password" placeholder="Leave blank for open guest access" /></label>
+        <div style="display:flex;gap:0.6rem">
+          <button class="btn btn-primary" type="submit">Create Meeting</button>
+          <a class="btn btn-ghost" href="/meetings">Cancel</a>
+        </div>
+      </form>
+      <div class="card" id="created" hidden style="margin-top:1rem;max-width:640px"></div>
+    `;
+
+    const form = document.getElementById("create-form");
+    const today = new Date();
+    form.date.value = today.toISOString().slice(0, 10);
+    form.time.value = `${String(today.getHours()).padStart(2,"0")}:${String(today.getMinutes()).padStart(2,"0")}`;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const scheduled = new Date(`${fd.get("date")}T${fd.get("time")}:00`);
+      try {
+        const meeting = await api("/api/meetings", {
+          method: "POST",
+          body: JSON.stringify({
+            title: fd.get("title"),
+            description: fd.get("description"),
+            agenda: fd.get("agenda"),
+            scheduled_start: scheduled.toISOString(),
+            duration_minutes: Number(fd.get("duration_minutes") || 60),
+            participants: String(fd.get("participants") || "").split(/\n+/).map(s => s.trim()).filter(Boolean),
+            tags: String(fd.get("tags") || "").split(",").map(s => s.trim()).filter(Boolean),
+            join_password: String(fd.get("join_password") || "").trim() || null,
+          }),
+        });
+        const link = meeting.link;
+        const box = document.getElementById("created");
+        box.hidden = false;
+        box.innerHTML = inviteCardHtml({
+          title: meeting.title,
+          link,
+          publicId: meeting.public_id,
+        });
+
+        box.querySelector('[data-action="copy-link"]').onclick = async () => {
+          await copyText(link);
+          toast("Link copied", "ok");
+        };
+        box.querySelector('[data-action="share-link"]').onclick = async () => {
+          try {
+            const result = await shareMeetingLink({ title: meeting.title, link });
+            toast(result === "shared" ? "Shared" : "Link copied", "ok");
+          } catch (err) {
+            if (err?.name !== "AbortError") toast(err.message || "Share failed", "error");
+          }
+        };
+        toast("Meeting created", "ok");
+        box.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    });
+  </script>
+</body>
+</html>

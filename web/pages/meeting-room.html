@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Room — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    import { api, getUser, toast, copyText, shareMeetingLink } from "/static/js/api.js";
+    import { MeshRoom, SignalingClient, fetchIceServers } from "/static/js/webrtc.js";
+
+    const publicId = location.pathname.split("/").filter(Boolean).pop();
+    const root = document.getElementById("root");
+    const user = getUser();
+    let meeting = null;
+    let localStream = null;
+    let mesh = null;
+    let signaling = null;
+    let peerId = crypto.randomUUID();
+    let displayName = user?.full_name || "";
+    let role = "participant";
+    let recording = false;
+    let recognition = null;
+    let transcriptPaused = false;
+    let screenTrack = null;
+    let camTrack = null;
+
+    async function loadMeeting() {
+      try {
+        meeting = await api(`/api/meetings/${publicId}`);
+      } catch (err) {
+        root.innerHTML = `<div class="lobby-wrap card"><h1>Meeting not found</h1><p class="muted">${err.message}</p><a href="/">Go home</a></div>`;
+        throw err;
+      }
+      if (meeting.status === "ended") {
+        root.innerHTML = `<div class="lobby-wrap card"><h1>${meeting.title}</h1><p class="muted">This meeting has ended.</p><a class="btn btn-primary" href="/meetings/${publicId}">View details</a></div>`;
+        throw new Error("ended");
+      }
+    }
+
+    function renderLobby() {
+      root.innerHTML = `
+        <div class="ambient"></div>
+        <div class="lobby-wrap card">
+          <p class="muted">You're about to join</p>
+          <h1 style="font-family:var(--font-display);margin:0.2rem 0 1rem">${meeting.title}</h1>
+          <div class="preview-box"><video id="preview" autoplay muted playsinline></video></div>
+          <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
+            <button class="btn btn-ghost" id="toggle-mic" type="button">Mute</button>
+            <button class="btn btn-ghost" id="toggle-cam" type="button">Camera off</button>
+          </div>
+          <label class="field"><span>Display name</span><input id="display-name" value="${displayName}" required /></label>
+          ${meeting.requires_password ? `<label class="field"><span>Meeting password</span><input id="join-password" type="password" required /></label>` : ""}
+          <div style="display:flex;gap:0.6rem;margin-top:1rem">
+            <button class="btn btn-primary" id="join-btn">Join Meeting</button>
+            <a class="btn btn-ghost" href="/">Cancel</a>
+          </div>
+          <p class="muted" id="lobby-status"></p>
+        </div>
+      `;
+    }
+
+    async function setupPreview() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        camTrack = localStream.getVideoTracks()[0] || null;
+        const preview = document.getElementById("preview");
+        preview.srcObject = localStream;
+      } catch (err) {
+        document.getElementById("lobby-status").textContent =
+          "Camera/microphone permission denied. You can still join with limited media.";
+        toast("Media permission issue", "error");
+      }
+      let micOn = true, camOn = true;
+      document.getElementById("toggle-mic").onclick = () => {
+        micOn = !micOn;
+        localStream?.getAudioTracks().forEach(t => t.enabled = micOn);
+        document.getElementById("toggle-mic").textContent = micOn ? "Mute" : "Unmute";
+      };
+      document.getElementById("toggle-cam").onclick = () => {
+        camOn = !camOn;
+        localStream?.getVideoTracks().forEach(t => t.enabled = camOn);
+        document.getElementById("toggle-cam").textContent = camOn ? "Camera off" : "Camera on";
+      };
+    }
+
+    function renderRoom() {
+      const inviteLink = meeting.link || `${location.origin}/meeting/${publicId}`;
+      root.innerHTML = `
+        <div class="room-shell">
+          <div class="room-top">
+            <div>
+              <strong>${meeting.title}</strong>
+              <span class="muted" style="margin-left:0.5rem">${publicId}</span>
+            </div>
+            <div class="rec-pill" id="rec-pill">Recording</div>
+          </div>
+          <div class="invite-bar" id="invite-bar">
+            <span class="invite-label">Invite participants — share this link so guests join the same room</span>
+            <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+              <button class="btn btn-secondary" type="button" id="copy-invite">Copy Link</button>
+              <button class="btn btn-ghost" type="button" id="share-invite">Share</button>
+            </div>
+          </div>
+          <div class="room-body">
+            <div class="video-grid" id="video-grid"></div>
+            <aside class="room-side">
+              <div class="side-tabs">
+                <button data-side="chat" class="active">Chat</button>
+                <button data-side="people">Participants</button>
+                <button data-side="transcript">Live Transcript</button>
+                <button data-side="diag">Diagnostics</button>
+              </div>
+              <div class="side-panel" id="side-panel"></div>
+            </aside>
+          </div>
+          <div class="room-controls">
+            <button class="btn btn-secondary" id="ctrl-mic">Mic</button>
+            <button class="btn btn-secondary" id="ctrl-cam">Cam</button>
+            <button class="btn btn-secondary" id="ctrl-share">Share</button>
+            <button class="btn btn-secondary" id="ctrl-chat">Chat</button>
+            <button class="btn btn-secondary" id="ctrl-people">People</button>
+            <button class="btn btn-secondary" id="ctrl-record">Record</button>
+            <button class="btn btn-secondary" id="ctrl-transcribe">Transcribe</button>
+            ${role === "host" ? '<button class="btn btn-secondary" id="ctrl-end">End</button>' : ""}
+            <button class="btn btn-ghost" id="ctrl-leave" style="background:#8b2e2e;color:#fff">Leave</button>
+          </div>
+        </div>
+      `;
+      document.getElementById("copy-invite").onclick = async () => {
+        await copyText(inviteLink);
+        toast("Meeting link copied", "ok");
+      };
+      document.getElementById("share-invite").onclick = async () => {
+        try {
+          const result = await shareMeetingLink({ title: meeting.title, link: inviteLink });
+          toast(result === "shared" ? "Shared" : "Meeting link copied", "ok");
+        } catch (err) {
+          if (err?.name !== "AbortError") toast(err.message || "Share failed", "error");
+        }
+      };
+    }
+
+    function addTile(id, stream, label, muted = false) {
+      let tile = document.getElementById(`tile-${id}`);
+      if (!tile) {
+        tile = document.createElement("div");
+        tile.className = "tile";
+        tile.id = `tile-${id}`;
+        tile.innerHTML = `<video autoplay playsinline ${muted ? "muted" : ""}></video><div class="tile-label"></div>`;
+        document.getElementById("video-grid").appendChild(tile);
+      }
+      tile.querySelector("video").srcObject = stream;
+      tile.querySelector(".tile-label").textContent = label;
+    }
+
+    function removeTile(id) {
+      document.getElementById(`tile-${id}`)?.remove();
+    }
+
+    let side = "chat";
+    const chatMessages = [];
+    const transcriptItems = [];
+    let roster = [];
+    let wsState = "none";
+    let iceMeta = { has_turn: false, has_stun: true };
+    const peerDiag = new Map();
+
+    function mediaFlags() {
+      const audio = localStream?.getAudioTracks()?.[0];
+      const video = localStream?.getVideoTracks()?.[0];
+      return {
+        mic: audio ? (audio.enabled ? "on" : "muted") : "missing",
+        cam: video ? (video.enabled ? "on" : "off") : "missing",
+      };
+    }
+
+    function renderDiagnostics() {
+      const media = mediaFlags();
+      const remotes = mesh?.diagnostics?.() || [...peerDiag.entries()].map(([peerId, state]) => ({ peerId, ...state }));
+      const anyRemote = remotes.some((r) => r.connection === "connected");
+      const anyIceOk = remotes.some((r) => r.ice === "connected" || r.ice === "completed");
+      const anyIceFail = remotes.some((r) => r.ice === "failed");
+      return `
+        <div class="diag-panel">
+          <div class="diag-row"><span>Server URL</span><strong>${location.origin}</strong></div>
+          <div class="diag-row"><span>Meeting ID</span><strong>${publicId}</strong></div>
+          <div class="diag-row"><span>Signaling</span><strong>${wsState === "open" ? "Connected" : wsState === "error" || wsState === "closed" ? "Disconnected" : wsState}</strong></div>
+          <div class="diag-row"><span>WebRTC</span><strong>${anyRemote ? "Connected" : remotes.length ? "Connecting / Failed" : "Waiting"}</strong></div>
+          <div class="diag-row"><span>ICE</span><strong>${anyIceOk ? "Connected" : anyIceFail ? "Failed" : remotes.length ? "Checking" : "—"}</strong></div>
+          <div class="diag-row"><span>Local microphone</span><strong>${media.mic === "on" ? "Active" : media.mic === "muted" ? "Inactive" : "Missing"}</strong></div>
+          <div class="diag-row"><span>Local camera</span><strong>${media.cam === "on" ? "Active" : media.cam === "off" ? "Inactive" : "Missing"}</strong></div>
+          <div class="diag-row"><span>Remote participant</span><strong>${Math.max(0, (roster.length || 1) - 1) > 0 ? "Connected" : "Disconnected"}</strong></div>
+          <div class="diag-row"><span>STUN configured</span><strong>${iceMeta.has_stun ? "Yes" : "No"}</strong></div>
+          <div class="diag-row"><span>TURN configured</span><strong>${iceMeta.has_turn ? "Yes" : "No (cross-network may fail)"}</strong></div>
+          ${remotes.map(r => `
+            <div class="diag-peer">
+              <div><strong>${r.peerId.slice(0, 8)}…</strong></div>
+              <div>WebRTC: ${r.connection === "connected" ? "Connected" : (r.connection || "—")}</div>
+              <div>ICE: ${r.ice === "connected" || r.ice === "completed" ? "Connected" : (r.ice || "—")}</div>
+              <div>ICE types: ${(r.candidateTypes || []).join(", ") || "—"} <span class="muted">(host / srflx / relay)</span></div>
+            </div>
+          `).join("") || `<p class="muted">No remote WebRTC peers yet.</p>`}
+          <p class="muted" style="margin-top:0.75rem;font-size:0.8rem">
+            Public hosting alone does not guarantee media. Without TURN, restrictive NATs can block WebRTC.
+          </p>
+        </div>
+      `;
+    }
+
+    function renderSide() {
+      const panel = document.getElementById("side-panel");
+      if (!panel) return;
+      if (side === "chat") {
+        panel.innerHTML = `
+          <div class="chat-list" id="chat-list">${chatMessages.map(m =>
+            `<div class="chat-item"><strong>${m.sender_name}</strong>${m.body}</div>`
+          ).join("")}</div>
+          <form id="chat-form" style="display:flex;gap:0.4rem;margin-top:0.6rem">
+            <input id="chat-input" placeholder="Message…" style="flex:1;border-radius:10px;border:0;padding:0.55rem" />
+            <button class="btn btn-primary" type="submit">Send</button>
+          </form>`;
+        document.getElementById("chat-form").onsubmit = (e) => {
+          e.preventDefault();
+          const input = document.getElementById("chat-input");
+          const body = input.value.trim();
+          if (!body) return;
+          signaling.send({ type: "chat_message", body });
+          input.value = "";
+        };
+      } else if (side === "people") {
+        panel.innerHTML = `<div class="roster-list">${roster.map(p =>
+          `<div class="chat-item"><strong>${p.display_name}</strong>${p.role || "participant"}</div>`
+        ).join("") || "<p class='muted'>No participants yet</p>"}</div>`;
+      } else if (side === "diag") {
+        panel.innerHTML = renderDiagnostics();
+      } else {
+        panel.innerHTML = `
+          <div style="display:flex;gap:0.4rem;margin-bottom:0.5rem">
+            <button class="btn btn-ghost" id="pause-tr">${transcriptPaused ? "Resume" : "Pause"}</button>
+            <button class="btn btn-ghost" id="copy-tr">Copy</button>
+          </div>
+          <div class="transcript-list" id="tr-list">${transcriptItems.map(t => {
+            const m = String(Math.floor((t.start_sec||0)/60)).padStart(2,"0");
+            const s = String(Math.floor((t.start_sec||0)%60)).padStart(2,"0");
+            return `<div class="transcript-item"><strong>${m}:${s} — ${t.speaker_label}</strong>${t.text}</div>`;
+          }).join("")}</div>`;
+        document.getElementById("pause-tr").onclick = () => {
+          transcriptPaused = !transcriptPaused;
+          if (transcriptPaused) recognition?.stop();
+          else startTranscription();
+          renderSide();
+        };
+        document.getElementById("copy-tr").onclick = async () => {
+          await navigator.clipboard.writeText(transcriptItems.map(t => `${t.speaker_label}: ${t.text}`).join("\n"));
+          toast("Transcript copied", "ok");
+        };
+      }
+    }
+
+    function startTranscription() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        toast("Live transcription needs Chrome/Edge", "error");
+        return;
+      }
+      recognition?.stop();
+      recognition = new SR();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+      const started = performance.now();
+      recognition.onresult = (event) => {
+        if (transcriptPaused) return;
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const r = event.results[i];
+          if (!r.isFinal) continue;
+          const text = r[0].transcript.trim();
+          if (!text) continue;
+          const start_sec = (performance.now() - started) / 1000;
+          signaling.send({
+            type: "transcript_segment",
+            text,
+            speaker_label: displayName,
+            start_sec,
+          });
+        }
+      };
+      recognition.onend = () => {
+        if (!transcriptPaused && recognition) {
+          try { recognition.start(); } catch (_) {}
+        }
+      };
+      try { recognition.start(); } catch (_) {}
+    }
+
+    async function enterRoom() {
+      displayName = document.getElementById("display-name").value.trim() || "Guest";
+      const joinPassword = document.getElementById("join-password")?.value || null;
+      const join = await api(`/api/meetings/${publicId}/join`, {
+        method: "POST",
+        body: JSON.stringify({
+          display_name: displayName,
+          join_password: joinPassword,
+        }),
+      });
+      role = join.participant.role;
+      meeting = join.meeting;
+      renderRoom();
+      if (localStream) addTile("local", localStream, `${displayName} (you)`, true);
+
+      let iceConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }], has_turn: false, has_stun: true };
+      try {
+        iceConfig = await fetchIceServers(publicId);
+        iceMeta = {
+          has_turn: !!iceConfig.has_turn,
+          has_stun: iceConfig.has_stun !== false,
+        };
+      } catch (err) {
+        toast("Using default STUN (ICE config unavailable)", "error");
+      }
+
+      signaling = new SignalingClient(publicId, {
+        peerId,
+        displayName,
+        role,
+        onState: (state) => {
+          wsState = state;
+          if (side === "diag") renderSide();
+        },
+        onMessage: async (msg) => {
+          if (msg.type === "welcome") {
+            roster = msg.roster || [];
+            for (const p of roster) {
+              if (p.peer_id !== peerId) await mesh.call(p.peer_id);
+            }
+            renderSide();
+          } else if (msg.type === "peer_joined") {
+            roster = msg.roster || roster;
+            if (msg.peer_id !== peerId) await mesh.call(msg.peer_id);
+            renderSide();
+          } else if (msg.type === "peer_left") {
+            roster = msg.roster || roster;
+            mesh.closePeer(msg.peer_id);
+            removeTile(msg.peer_id);
+            renderSide();
+          } else if (msg.type === "offer") {
+            await mesh.handleOffer(msg.from, msg.sdp);
+          } else if (msg.type === "answer") {
+            await mesh.handleAnswer(msg.from, msg.sdp);
+          } else if (msg.type === "ice_candidate") {
+            await mesh.handleIce(msg.from, msg.candidate);
+          } else if (msg.type === "chat_message") {
+            chatMessages.push(msg);
+            if (side === "chat") renderSide();
+          } else if (msg.type === "transcript_segment") {
+            transcriptItems.push(msg.segment);
+            if (side === "transcript") renderSide();
+          } else if (msg.type === "recording_state") {
+            recording = !!msg.active;
+            document.getElementById("rec-pill").classList.toggle("active", recording);
+            if (recording) toast(`${msg.by} started recording`, "ok");
+          } else if (msg.type === "meeting_ended") {
+            toast("Host ended the meeting", "ok");
+            leave();
+          }
+        },
+      });
+
+      mesh = new MeshRoom({
+        signaling,
+        localStream,
+        iceServers: iceConfig.iceServers || [{ urls: "stun:stun.l.google.com:19302" }],
+        onRemoteStream: (id, stream) => {
+          const meta = roster.find((p) => p.peer_id === id);
+          addTile(id, stream, meta?.display_name || "Participant");
+          if (side === "diag") renderSide();
+        },
+        onPeerLeft: (id) => {
+          removeTile(id);
+          if (side === "diag") renderSide();
+        },
+        onPeerState: (id, state) => {
+          peerDiag.set(id, state);
+          if (side === "diag") renderSide();
+        },
+      });
+
+      await signaling.connect();
+      renderSide();
+
+      // Load chat history
+      try {
+        const history = await api(`/api/chat/${publicId}`);
+        chatMessages.push(...history);
+        if (side === "chat") renderSide();
+      } catch (_) {}
+
+      document.querySelector(".side-tabs").onclick = (e) => {
+        const btn = e.target.closest("button[data-side]");
+        if (!btn) return;
+        side = btn.dataset.side;
+        document.querySelectorAll(".side-tabs button").forEach(b => b.classList.toggle("active", b === btn));
+        renderSide();
+      };
+
+      let micOn = true, camOn = true;
+      document.getElementById("ctrl-mic").onclick = () => {
+        micOn = !micOn;
+        localStream?.getAudioTracks().forEach(t => t.enabled = micOn);
+        signaling.send({ type: "media_state", muted: !micOn, camera_off: !camOn });
+        if (side === "diag") renderSide();
+      };
+      document.getElementById("ctrl-cam").onclick = () => {
+        camOn = !camOn;
+        localStream?.getVideoTracks().forEach(t => t.enabled = camOn);
+        signaling.send({ type: "media_state", muted: !micOn, camera_off: !camOn });
+        if (side === "diag") renderSide();
+      };
+      document.getElementById("ctrl-share").onclick = async () => {
+        try {
+          if (screenTrack) {
+            screenTrack.stop();
+            screenTrack = null;
+            if (camTrack) mesh.replaceVideoTrack(camTrack);
+            toast("Screen share stopped", "ok");
+            return;
+          }
+          const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          screenTrack = screen.getVideoTracks()[0];
+          mesh.replaceVideoTrack(screenTrack);
+          screenTrack.onended = () => {
+            screenTrack = null;
+            if (camTrack) mesh.replaceVideoTrack(camTrack);
+          };
+          toast("Sharing screen", "ok");
+        } catch (err) {
+          toast(err.message || "Screen share failed", "error");
+        }
+      };
+      document.getElementById("ctrl-chat").onclick = () => {
+        side = "chat";
+        renderSide();
+      };
+      document.getElementById("ctrl-people").onclick = () => {
+        side = "people";
+        renderSide();
+      };
+      document.getElementById("ctrl-transcribe").onclick = () => {
+        side = "transcript";
+        transcriptPaused = false;
+        startTranscription();
+        renderSide();
+        toast("Live transcription started", "ok");
+      };
+      document.getElementById("ctrl-record").onclick = async () => {
+        if (role !== "host") {
+          toast("Only the host can control recording", "error");
+          return;
+        }
+        if (!recording) {
+          const ok = confirm("Start recording? All participants will be notified.");
+          if (!ok) return;
+          try {
+            await api(`/api/recordings/${publicId}/start`, { method: "POST", body: "{}" });
+            signaling.send({ type: "recording_state", active: true });
+            recording = true;
+            document.getElementById("rec-pill").classList.add("active");
+          } catch (err) {
+            toast(err.message, "error");
+          }
+        } else {
+          try {
+            await api(`/api/recordings/${publicId}/stop`, { method: "POST", body: new FormData() });
+            signaling.send({ type: "recording_state", active: false });
+            recording = false;
+            document.getElementById("rec-pill").classList.remove("active");
+            toast("Recording stopped", "ok");
+          } catch (err) {
+            toast(err.message, "error");
+          }
+        }
+      };
+      document.getElementById("ctrl-leave").onclick = leave;
+      document.getElementById("ctrl-end")?.addEventListener("click", async () => {
+        if (!confirm("End meeting for everyone?")) return;
+        try {
+          await api(`/api/meetings/${publicId}/end`, { method: "POST", body: "{}" });
+          signaling.send({ type: "meeting_ended" });
+          leave();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      });
+    }
+
+    function leave() {
+      recognition?.stop();
+      signaling?.close();
+      mesh?.closeAll();
+      localStream?.getTracks().forEach(t => t.stop());
+      location.href = `/meetings/${publicId}`;
+    }
+
+    await loadMeeting();
+    renderLobby();
+    await setupPreview();
+    document.getElementById("join-btn").onclick = async () => {
+      try {
+        await enterRoom();
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    };
+  </script>
+</body>
+</html>

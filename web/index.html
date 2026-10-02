@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minuta — Enterprise AI Meeting Intelligence</title>
+  <meta name="description" content="AI-powered meeting platform. Real-time transcription, executive summaries, and automated action item tracking for modern teams." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    /* ── Logo Strip ─────────────────────────── */
+    .logo-strip-wrap {
+      border-top: 1px solid var(--b0); border-bottom: 1px solid var(--b0);
+      background: var(--s1); padding: 1.75rem 2rem;
+    }
+    .logo-strip {
+      max-width: 1180px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 2rem;
+    }
+    .logo-strip-label {
+      font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--t3);
+    }
+    .logo-items { display: flex; gap: 2.5rem; align-items: center; flex-wrap: wrap; }
+    .logo-item { font-size: 0.85rem; font-weight: 700; color: var(--t3); opacity: 0.7; letter-spacing: 0.03em; }
+
+    /* ── Trust Stars ─────────────────────────── */
+    .stars { color: #f59e0b; font-size: 0.8rem; letter-spacing: 2px; margin-bottom: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="ambient-grid" aria-hidden="true"></div>
+
+  <!-- NAV HEADER -->
+  <header class="topbar">
+    <a class="brand-mark" href="/">
+      <span class="brand-glyph"></span>
+      Minuta
+    </a>
+    <nav class="top-nav">
+      <a href="/tools">Features</a>
+      <a href="/demo">Live Demo</a>
+      <a href="/login">Sign in</a>
+      <a class="btn btn-primary btn-sm" href="/register">Start Free Trial →</a>
+    </nav>
+  </header>
+
+  <!-- HERO SECTION -->
+  <section class="hero">
+    <div class="hero-copy reveal">
+      <div class="hero-kicker">Enterprise AI Meeting Intelligence</div>
+
+      <h1 class="hero-title">
+        Turn every meeting into actionable intelligence.
+      </h1>
+
+      <p class="hero-subtitle">
+        Minuta automatically transcribes conversations in real time, generates structured executive summaries, and tracks action items — keeping your team focused on decisions.
+      </p>
+
+      <div class="hero-cta">
+        <a class="btn btn-primary btn-lg" href="/register">Start Free Trial →</a>
+        <a class="btn btn-secondary btn-lg" href="/demo">Schedule Demo</a>
+      </div>
+
+      <div class="hero-meta">
+        <div class="hero-meta-item">
+          <strong>99.4%</strong>
+          <span>Speech accuracy</span>
+        </div>
+        <div class="hero-meta-item">
+          <strong>&lt; 15s</strong>
+          <span>Summary generation</span>
+        </div>
+        <div class="hero-meta-item">
+          <strong>SOC-2</strong>
+          <span>Enterprise security</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HERO PRODUCT PREVIEW CARD -->
+    <div class="hero-visual reveal">
+      <div class="hero-ui-card">
+        <div class="hui-header">
+          <div class="hui-dots">
+            <div class="hui-dot"></div>
+            <div class="hui-dot"></div>
+            <div class="hui-dot"></div>
+          </div>
+          <span class="hui-title">Minuta — Q3 Product Strategy &amp; Architecture</span>
+          <div class="hui-live">
+            <div class="hui-live-dot"></div>
+            LIVE
+          </div>
+        </div>
+
+        <div class="hui-body">
+          <div>
+            <div class="hui-section-label">Real-time Transcript Stream</div>
+            <div class="hui-transcript">
+              <div class="hui-line">
+                <span class="hui-speaker s-alex">Alex</span>
+                <span class="hui-text">We've finalized the API architecture for the Q3 enterprise rollout.</span>
+              </div>
+              <div class="hui-line">
+                <span class="hui-speaker s-priya">Priya</span>
+                <span class="hui-text">Security compliance audit passes on Wednesday. Pipeline docs are ready.</span>
+              </div>
+              <div class="hui-line">
+                <span class="hui-speaker s-sam">Sam</span>
+                <span class="hui-text">Staging deployment scheduled for Thursday 09:00 UTC.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="hui-sep"></div>
+
+          <div>
+            <div class="hui-section-label">Extracted Action Items &amp; Owners</div>
+            <div class="hui-items">
+              <div class="hui-item">
+                <div class="hui-checkbox done">✓</div>
+                <span><span class="hui-item-name">Priya</span> — Finalize Security Audit Checklist</span>
+                <span class="hui-item-due">Wed</span>
+              </div>
+              <div class="hui-item">
+                <div class="hui-checkbox"></div>
+                <span><span class="hui-item-name">Sam</span> — Deploy Staging Environment v2.4</span>
+                <span class="hui-item-due">Thu</span>
+              </div>
+              <div class="hui-item">
+                <div class="hui-checkbox"></div>
+                <span><span class="hui-item-name">Alex</span> — Send Executive Brief to Stakeholders</span>
+                <span class="hui-item-due">Fri</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOGO STRIP -->
+  <div class="logo-strip-wrap">
+    <div class="logo-strip">
+      <span class="logo-strip-label">Trusted by Engineering &amp; Operations Teams</span>
+      <div class="logo-items">
+        <span class="logo-item">ACME CORP</span>
+        <span class="logo-item">VERTEX SYSTEMS</span>
+        <span class="logo-item">HORIZON LABS</span>
+        <span class="logo-item">NEXUS ENTERPRISE</span>
+        <span class="logo-item">MERIDIAN DATA</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- FEATURES SECTION -->
+  <section class="section">
+    <div class="section-head reveal">
+      <div class="section-label">Capabilities</div>
+      <h2>Engineered for Enterprise Collaboration</h2>
+      <p>Powerful speech-to-text intelligence designed to eliminate manual note-taking and streamline team alignment.</p>
+    </div>
+
+    <div class="feature-grid reveal">
+      <article class="feature-card">
+        <div class="feat-icon-box">🎙</div>
+        <h3>Real-time Speech Recognition</h3>
+        <p>Continuous speaker diarization and multi-language speech recognition powered by modern neural engines.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feat-icon-box">⚡</div>
+        <h3>Automated Executive Summaries</h3>
+        <p>Generates structured key takeaways, strategic decisions, and concise summaries within seconds of call completion.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feat-icon-box">☑</div>
+        <h3>Intelligent Action Extraction</h3>
+        <p>Automatically identifies action items, detects assigned team members, and sets due dates from natural dialogue.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feat-icon-box">🔒</div>
+        <h3>Enterprise Data Security</h3>
+        <p>End-to-end encryption in transit and at rest. Strict compliance standards ensuring your data stays private.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feat-icon-box">⌕</div>
+        <h3>Indexed Workspace Search</h3>
+        <p>Full-text index across every meeting minute, transcript line, and decision point for instant team retrieval.</p>
+      </article>
+
+      <article class="feature-card">
+        <div class="feat-icon-box">↗</div>
+        <h3>One-Click Export &amp; Sharing</h3>
+        <p>Seamlessly export structured notes into Markdown, PDF, or share authorized access links with your organization.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS SECTION -->
+  <section class="section">
+    <div class="section-head reveal">
+      <div class="section-label">Workflow</div>
+      <h2>Simple Integration into Your Daily Stack</h2>
+      <p>Zero software installation required. Open in your browser, launch a session, and let Minuta handle the rest.</p>
+    </div>
+
+    <div class="step-row reveal">
+      <div class="step-card">
+        <span class="step-num-badge">STEP 01</span>
+        <h3>Launch or Upload Session</h3>
+        <p>Start a live audio meeting directly from your browser or upload pre-recorded audio/video files.</p>
+      </div>
+
+      <div class="step-card">
+        <span class="step-num-badge">STEP 02</span>
+        <h3>Real-time AI Processing</h3>
+        <p>Watch speech convert to text live, complete with speaker identification and contextual parsing.</p>
+      </div>
+
+      <div class="step-card">
+        <span class="step-num-badge">STEP 03</span>
+        <h3>Review &amp; Execute</h3>
+        <p>Instantly access structured executive minutes, review assigned tasks, and share with your team.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TESTIMONIALS SECTION -->
+  <section class="section">
+    <div class="section-head reveal">
+      <div class="section-label">Validation</div>
+      <h2>What Leaders Say About Minuta</h2>
+    </div>
+
+    <div class="testimonial-row reveal">
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"Minuta has transformed our executive alignment. The summary quality is exceptionally accurate, eliminating hours of manual follow-ups."</blockquote>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">R</div>
+          <div>
+            <div class="testimonial-name">Rachel Stevens</div>
+            <div class="testimonial-title">VP of Product, Vertex Systems</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"The action item extraction accuracy is unmatched. Tasks are automatically captured and assigned cleanly without missing context."</blockquote>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">D</div>
+          <div>
+            <div class="testimonial-name">Daniel Kramer</div>
+            <div class="testimonial-title">Director of Engineering, Nexus</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <div class="stars">★★★★★</div>
+        <blockquote>"Browser-native execution with enterprise privacy guarantees made rollout seamless across our entire global organization."</blockquote>
+        <div class="testimonial-author">
+          <div class="testimonial-avatar">A</div>
+          <div>
+            <div class="testimonial-name">Amara Jackson</div>
+            <div class="testimonial-title">Chief Operating Officer, Horizon</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA BANNER -->
+  <div class="cta-banner">
+    <div class="cta-inner reveal">
+      <div class="section-label">Get Started</div>
+      <h2>Elevate Your Team's Meeting Productivity</h2>
+      <p>Experience intelligent meeting transcription and automated notes in under 2 minutes.</p>
+      <div class="cta-btns">
+        <a class="btn btn-primary btn-lg" href="/register">Start Free Trial →</a>
+        <a class="btn btn-secondary btn-lg" href="/demo">Schedule a Demo</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- JOIN SECTION -->
+  <section class="join-section" id="join-box">
+    <div class="join-card reveal">
+      <div class="badge badge-emerald" style="margin-bottom:0.75rem">JOIN SESSION</div>
+      <h2>Have a Meeting Invite?</h2>
+      <p>Enter the meeting ID to join an active session directly. No installation required.</p>
+      <form id="join-form">
+        <div class="join-form-wrap">
+          <label class="field" style="margin:0">
+            <span>Meeting ID</span>
+            <input name="id" placeholder="e.g. 7XK29P" required autocomplete="off" />
+          </label>
+          <button class="btn btn-primary" type="submit">Join →</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="site-footer">
+    <a class="brand-mark" href="/">
+      <span class="brand-glyph"></span> Minuta
+    </a>
+    <span>Enterprise AI Meeting Intelligence</span>
+    <span>© 2026 Minuta. All rights reserved.</span>
+  </footer>
+
+  <script>
+    // Join form handler
+    document.getElementById("join-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const id = new FormData(e.target).get("id").trim();
+      if (id) location.href = `/meeting/${encodeURIComponent(id)}`;
+    });
+
+    // Scroll reveal observer
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(el => { if (el.isIntersecting) { el.target.classList.add('in'); } });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>

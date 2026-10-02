@@ -1,0 +1,17 @@
+# Optional API proxy rewrites — use AFTER your backend is running on VPS/Docker.
+#
+# 1. Copy the "rewrites" block below into vercel.json (at the TOP of the rewrites array)
+# 2. Replace YOUR_VPS_DOMAIN with your real backend URL (https, no trailing slash)
+# 3. Commit and push — Vercel will proxy /api and /ws to your VPS
+#
+# Example backend URL: https://api.minuta.yourdomain.com
+# (or the same domain if nginx routes /api on the VPS)
+#
+# {
+#   "source": "/api/:path*",
+#   "destination": "https://YOUR_VPS_DOMAIN/api/:path*"
+# },
+# {
+#   "source": "/ws/:path*",
+#   "destination": "https://YOUR_VPS_DOMAIN/ws/:path*"
+# }

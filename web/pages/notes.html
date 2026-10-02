@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notes — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, formatWhen, toast } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+    const content = mountShell({ title: "Notes", active: "/notes" });
+    content.innerHTML = `<h1 style="font-family:var(--font-display)">Meeting notes</h1><div id="list" class="meeting-list"></div>`;
+    try {
+      const notes = await api("/api/notes");
+      document.getElementById("list").innerHTML = notes.length ? notes.map(n => `
+        <a class="meeting-row" href="/meetings/${n.meeting_public_id}" style="text-decoration:none;color:inherit">
+          <div>
+            <strong>${n.meeting_title}</strong>
+            <div class="muted">${formatWhen(n.date)} · ${n.action_item_count} action items · updated ${formatWhen(n.updated_at)}</div>
+            <p class="muted">${n.summary_preview || ""}</p>
+          </div>
+        </a>`).join("") : `<div class="empty">No notes yet. Generate AI notes from a meeting transcript.</div>`;
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — Minuta Enterprise</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+  <style>
+    body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 100vh;
+      background: var(--s0);
+    }
+    .auth-left {
+      border-right: 1px solid var(--b0);
+      padding: 3rem;
+      display: flex;
+      flex-direction: column;
+      background: var(--s1);
+      position: relative;
+    }
+    .auth-left-content {
+      margin: auto 0;
+      max-width: 420px;
+    }
+    .auth-tagline {
+      font-size: clamp(1.6rem, 3vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1.15;
+      color: var(--t1);
+      margin: 0 0 1.25rem;
+    }
+    .auth-feat-list {
+      display: grid; gap: 0.75rem;
+      list-style: none; padding: 0; margin: 0 0 2.5rem;
+    }
+    .auth-feat-list li {
+      display: flex; align-items: center; gap: 0.65rem;
+      font-size: 0.875rem; color: var(--t2);
+    }
+    .auth-feat-list li::before {
+      content: '✓'; color: var(--accent); font-weight: 700; flex-shrink: 0;
+    }
+    .auth-quote {
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--b0);
+    }
+    .auth-quote p {
+      margin: 0 0 0.5rem; font-size: 0.875rem; color: var(--t2); line-height: 1.6; font-style: italic;
+    }
+    .auth-quote cite { font-size: 0.78rem; font-style: normal; color: var(--t3); }
+
+    .auth-right {
+      display: flex; align-items: center; justify-content: center;
+      padding: 2.5rem; background: var(--s0);
+    }
+    .auth-form-card { width: 100%; max-width: 380px; }
+    .auth-back {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      font-size: 0.8125rem; color: var(--t3); text-decoration: none;
+      font-weight: 500; margin-bottom: 2rem; transition: color var(--t-fast);
+    }
+    .auth-back:hover { color: var(--t1); }
+    .auth-back::before { content: '←'; }
+
+    .auth-form-card h1 {
+      font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em;
+      color: var(--t1); margin: 0 0 0.35rem;
+    }
+    .auth-form-card .subtitle {
+      font-size: 0.875rem; color: var(--t2); margin: 0 0 1.75rem;
+    }
+    .auth-divider {
+      display: flex; align-items: center; gap: 0.75rem; margin: 1.25rem 0;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--b0);
+    }
+    .auth-divider span { font-size: 0.75rem; color: var(--t3); }
+
+    .demo-link {
+      display: block; text-align: center; padding: 0.65rem;
+      border: 1px solid var(--b1); border-radius: var(--r-md);
+      font-size: 0.875rem; font-weight: 600; color: var(--t2);
+      transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+    }
+    .demo-link:hover { border-color: var(--b2); color: var(--t1); background: var(--s2); }
+
+    .form-footer-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 1.5rem; font-size: 0.8125rem;
+    }
+    .form-footer-row a { color: var(--t3); text-decoration: none; }
+    .form-footer-row a:hover { color: var(--t1); }
+
+    @media (max-width: 768px) {
+      body { grid-template-columns: 1fr; }
+      .auth-left { display: none; }
+      .auth-right { padding: 2rem 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-grid" aria-hidden="true"></div>
+  <div id="toast-host" class="toast-host"></div>
+
+  <!-- Left: Brand showcase -->
+  <div class="auth-left">
+    <a class="brand-mark" href="/">
+      <span class="brand-glyph"></span>
+      Minuta
+    </a>
+
+    <div class="auth-left-content">
+      <h2 class="auth-tagline">
+        Enterprise AI Meeting Intelligence.
+      </h2>
+
+      <ul class="auth-feat-list">
+        <li>Real-time speech-to-text with zero plugins</li>
+        <li>Automated executive summaries and decisions</li>
+        <li>Integrated WebRTC video conferencing</li>
+        <li>Full-text search across every organization session</li>
+      </ul>
+
+      <div class="auth-quote">
+        <p>"Minuta has eliminated manual meeting recap emails entirely across our product organization."</p>
+        <cite>Rachel Stevens — VP of Product, Vertex Systems</cite>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Sign in form -->
+  <div class="auth-right">
+    <div class="auth-form-card">
+      <a class="auth-back" href="/">Back to main site</a>
+
+      <div class="auth-form-top">
+        <h1>Sign in to Minuta</h1>
+        <p class="subtitle">Access your organization's meeting workspace.</p>
+      </div>
+
+      <form id="login-form">
+        <label class="field">
+          <span>Work Email</span>
+          <input type="email" name="email" placeholder="name@company.com" required autocomplete="email" />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" name="password" placeholder="••••••••" required autocomplete="current-password" />
+        </label>
+
+        <button class="btn btn-primary" type="submit" id="login-btn" style="width:100%;margin-top:0.5rem">
+          Sign in →
+        </button>
+
+        <div class="auth-divider"><span>or</span></div>
+
+        <a class="demo-link" href="/demo">Access Live Interactive Demo</a>
+      </form>
+
+      <div class="form-footer-row">
+        <a href="/register">Need an account? Register free</a>
+        <a href="/forgot-password">Forgot password?</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { api, setSession, toast } from "/static/js/api.js";
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("login-btn");
+      const orig = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Authenticating…";
+      const fd = new FormData(e.target);
+      try {
+        const data = await api("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({ email: fd.get("email"), password: fd.get("password") }),
+        });
+        setSession(data.access_token, data.user);
+        location.href = "/dashboard";
+      } catch (err) {
+        toast(err.message, "error");
+        btn.disabled = false;
+        btn.textContent = orig;
+      }
+    });
+  </script>
+</body>
+</html>

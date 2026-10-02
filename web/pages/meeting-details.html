@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Details — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, formatWhen, toast, getUser, copyText, shareMeetingLink } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+
+    const publicId = location.pathname.split("/").pop();
+    const content = mountShell({ title: "Meeting", active: "/meetings" });
+    content.innerHTML = `<div class="empty">Loading meeting…</div>`;
+
+    async function load() {
+      const [meeting, transcript, notes, chat, recording] = await Promise.all([
+        api(`/api/meetings/${publicId}`),
+        api(`/api/transcripts/${publicId}`),
+        api(`/api/notes/${publicId}`),
+        api(`/api/chat/${publicId}`),
+        api(`/api/recordings/${publicId}`),
+      ]);
+      const user = getUser();
+      const isHost = meeting.host_id === user.id;
+      const inviteLink = meeting.link;
+
+      content.innerHTML = `
+        <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:start">
+          <div>
+            <h1 style="font-family:var(--font-display);margin:0">${meeting.title}</h1>
+            <p class="muted">${formatWhen(meeting.scheduled_start || meeting.created_at)} · ${meeting.duration_minutes} min ·
+              ${(meeting.participants||[]).map(p=>p.display_name).join(", ") || "No participants"} ·
+              <span class="badge ${meeting.status}">${meeting.status}</span>
+            </p>
+          </div>
+          <div style="display:flex;gap:0.45rem;flex-wrap:wrap">
+            <a class="btn btn-primary" href="/meeting/${publicId}">Join</a>
+            <button class="btn btn-secondary" id="copy">Copy Meeting Link</button>
+            <button class="btn btn-ghost" id="share">Share</button>
+            <button class="btn btn-ghost" id="gen-notes">Generate AI Notes</button>
+            ${isHost && meeting.status !== "ended" ? `<button class="btn btn-ghost" id="end-meeting">End meeting</button>` : ""}
+          </div>
+        </div>
+        <div class="card" style="margin:1rem 0">
+          <p class="muted" style="margin:0 0 0.35rem">Invite participants</p>
+          <div class="share-link-row"><code class="share-link">${inviteLink}</code></div>
+          <p class="muted" style="margin-top:0.5rem;font-size:0.88rem">Guests open this link → enter name → join the same room (<code>/meeting/${publicId}</code>).</p>
+        </div>
+        <div class="tabs-row" id="tabs">
+          <button data-tab="overview" class="active">Overview</button>
+          <button data-tab="transcript">Transcript</button>
+          <button data-tab="notes">AI Notes</button>
+          <button data-tab="actions">Action Items</button>
+          <button data-tab="recording">Recording</button>
+          <button data-tab="chat">Chat</button>
+        </div>
+        <div id="panel" class="card"></div>
+        <div style="display:flex;gap:0.5rem;margin-top:0.75rem;flex-wrap:wrap">
+          <a class="btn btn-ghost" href="/api/export/${publicId}/transcript.txt">Transcript TXT</a>
+          <a class="btn btn-ghost" href="/api/export/${publicId}/transcript.md">Transcript MD</a>
+          <a class="btn btn-ghost" href="/api/export/${publicId}/notes.md">Notes MD</a>
+          <a class="btn btn-ghost" href="/api/export/${publicId}/notes.pdf">Notes PDF</a>
+          <button class="btn btn-ghost" id="copy-notes">Copy notes</button>
+        </div>
+      `;
+
+      const panel = document.getElementById("panel");
+      const note = notes.note;
+
+      function show(tab) {
+        if (tab === "overview") {
+          panel.innerHTML = `
+            <h3>Summary</h3>
+            <p>${note?.summary || "No AI summary yet. Generate AI Notes to create one."}</p>
+            <h3>Agenda</h3>
+            <pre style="white-space:pre-wrap;font:inherit">${meeting.agenda || "—"}</pre>
+            <h3>Topics</h3>
+            <p>${(note?.topics || []).join(", ") || "—"}</p>
+          `;
+        } else if (tab === "transcript") {
+          const segs = transcript.segments || [];
+          panel.innerHTML = segs.length
+            ? segs.map(s => {
+                const m = String(Math.floor(s.start_sec/60)).padStart(2,"0");
+                const sec = String(Math.floor(s.start_sec%60)).padStart(2,"0");
+                return `<div class="transcript-item" style="margin-bottom:0.6rem"><strong>${m}:${sec} — ${s.speaker_label}</strong><div>${s.text}</div></div>`;
+              }).join("")
+            : `<pre style="white-space:pre-wrap;font:inherit">${transcript.full_text || "No transcript yet."}</pre>`;
+        } else if (tab === "notes") {
+          panel.innerHTML = note
+            ? `<div>${(note.raw_markdown || "").replace(/\n/g,"<br>")}</div>
+               <h3>Decisions</h3><ul>${(note.decisions||[]).map(d=>`<li>${d.text||d}</li>`).join("") || "<li>None</li>"}</ul>
+               <h3>Questions</h3><ul>${(note.questions||[]).map(q=>`<li>${q.text||q}</li>`).join("") || "<li>None</li>"}</ul>
+               <h3>Follow-up</h3><p>${note.follow_up || "—"}</p>`
+            : `<div class="empty">No notes yet.</div>`;
+        } else if (tab === "actions") {
+          const items = note?.action_items || [];
+          panel.innerHTML = items.length
+            ? `<table style="width:100%;border-collapse:collapse">${["<tr><th align=left>Task</th><th>Assigned To</th><th>Deadline</th><th>Status</th></tr>",
+                ...items.map(a => `<tr><td>${a.task}</td><td>${a.assignee}</td><td>${a.deadline}</td><td>${a.status}</td></tr>`)
+              ].join("")}</table>`
+            : `<div class="empty">No action items.</div>`;
+        } else if (tab === "recording") {
+          panel.innerHTML = `
+            <p>Status: <strong>${recording.status || "none"}</strong></p>
+            <p class="muted">Duration: ${recording.duration_seconds ? recording.duration_seconds + "s" : "—"}</p>
+            ${recording.has_file ? `<a class="btn btn-secondary" href="/api/recordings/${publicId}/download">Download recording</a>` : "<p class='muted'>No recording file uploaded.</p>"}
+          `;
+        } else if (tab === "chat") {
+          panel.innerHTML = (chat || []).length
+            ? chat.map(m => `<div style="margin-bottom:0.55rem"><strong>${m.sender_name}</strong> <span class="muted">${formatWhen(m.created_at)}</span><div>${m.body}</div></div>`).join("")
+            : `<div class="empty">No chat messages.</div>`;
+        }
+      }
+
+      show("overview");
+      document.getElementById("tabs").addEventListener("click", (e) => {
+        const btn = e.target.closest("button[data-tab]");
+        if (!btn) return;
+        document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b === btn));
+        show(btn.dataset.tab);
+      });
+
+      document.getElementById("copy").onclick = async () => {
+        await copyText(inviteLink);
+        toast("Meeting link copied", "ok");
+      };
+      document.getElementById("share").onclick = async () => {
+        try {
+          const result = await shareMeetingLink({ title: meeting.title, link: inviteLink });
+          toast(result === "shared" ? "Shared" : "Meeting link copied", "ok");
+        } catch (err) {
+          if (err?.name !== "AbortError") toast(err.message || "Share failed", "error");
+        }
+      };
+      document.getElementById("copy-notes")?.addEventListener("click", async () => {
+        await copyText(note?.raw_markdown || note?.summary || "");
+        toast("Copied", "ok");
+      });
+      document.getElementById("gen-notes").onclick = async () => {
+        try {
+          toast("Generating AI notes…");
+          await api(`/api/notes/${publicId}/generate`, { method: "POST", body: "{}" });
+          toast("Notes ready", "ok");
+          load();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      };
+      document.getElementById("end-meeting")?.addEventListener("click", async () => {
+        try {
+          await api(`/api/meetings/${publicId}/end`, { method: "POST", body: "{}" });
+          toast("Meeting ended", "ok");
+          load();
+        } catch (err) {
+          toast(err.message, "error");
+        }
+      });
+    }
+
+    try {
+      await load();
+    } catch (err) {
+      content.innerHTML = `<div class="empty">${err.message}</div>`;
+    }
+  </script>
+</body>
+</html>

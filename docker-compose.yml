@@ -1,0 +1,31 @@
+services:
+  minuta:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - minuta_storage:/app/storage
+      - minuta_db:/data
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=sqlite:////data/minuta.db
+      - STORAGE_PATH=/app/storage
+    # Set MINUTA_BASE_URL=https://your.domain in .env before go-live.
+
+  # Optional TLS terminator — uncomment and add certs:
+  # nginx:
+  #   image: nginx:1.27-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./certs:/etc/nginx/certs:ro
+  #   depends_on:
+  #     - minuta
+
+volumes:
+  minuta_storage:
+  minuta_db:

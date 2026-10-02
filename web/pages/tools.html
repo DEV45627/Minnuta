@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tools — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="ambient"></div>
+  <header class="topbar">
+    <a class="brand-mark" href="/dashboard"><span class="brand-glyph"></span> Minuta</a>
+    <nav class="top-nav">
+      <a href="/dashboard">Dashboard</a>
+      <a href="/">Home</a>
+    </nav>
+  </header>
+  <main>
+    <section class="workspace" id="workspace">
+      <div class="section-head">
+        <h2>Capture tools</h2>
+        <p>Live listen, upload audio, paste transcripts — then generate structured minutes. Existing Minuta STT/NLP pipeline.</p>
+      </div>
+      <div class="workspace-grid">
+        <aside class="meta-panel">
+          <h3>Meeting details</h3>
+          <label class="field"><span>Title</span><input id="meeting-title" type="text" value="Weekly Project Sync" /></label>
+          <label class="field"><span>Date</span><input id="meeting-date" type="date" /></label>
+          <label class="field"><span>Participants</span><textarea id="participants" rows="5">Alex
+Jordan
+Sam
+Priya</textarea></label>
+          <label class="field check-field"><input id="use-whisper" type="checkbox" /><span>Enable Whisper (file / tab capture)</span></label>
+          <label class="field" id="model-field" hidden>
+            <span>Whisper model</span>
+            <select id="model-size">
+              <option value="tiny" selected>tiny (fast live)</option>
+              <option value="base">base</option>
+              <option value="small">small</option>
+            </select>
+          </label>
+        </aside>
+        <div class="input-panel">
+          <div class="mode-tabs mode-tabs-4" role="tablist">
+            <button type="button" class="mode-tab is-active" data-mode="live">Live</button>
+            <button type="button" class="mode-tab" data-mode="paste">Transcript</button>
+            <button type="button" class="mode-tab" data-mode="audio">Audio file</button>
+            <button type="button" class="mode-tab" data-mode="sample">Sample</button>
+          </div>
+          <div class="mode-pane is-active" data-pane="live">
+            <div class="live-panel">
+              <div class="live-header">
+                <div class="live-indicator" id="live-indicator" data-state="idle">
+                  <span class="live-dot"></span><span id="live-state-label">Idle</span>
+                </div>
+                <p class="hint">Best in Chrome. For Zoom/Meet/YouTube use Capture meeting / video and enable Share tab audio.</p>
+              </div>
+              <div class="live-actions">
+                <button type="button" class="btn btn-primary" id="live-mic-btn">Listen via microphone</button>
+                <button type="button" class="btn btn-secondary" id="live-tab-btn">Capture meeting / video</button>
+                <button type="button" class="btn btn-ghost" id="live-stop-btn" disabled>Stop listening</button>
+              </div>
+              <label class="field"><span>Live transcript</span>
+                <textarea id="live-transcript" rows="10" readonly placeholder="Spoken words appear here…"></textarea>
+              </label>
+              <p class="interim-line" id="interim-line"></p>
+              <div class="live-tools">
+                <button type="button" class="btn btn-ghost" id="use-live-transcript">Use as meeting transcript</button>
+                <button type="button" class="btn btn-ghost" id="clear-live-transcript">Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="mode-pane" data-pane="paste" hidden>
+            <label class="field"><span>Paste meeting transcript</span>
+              <textarea id="transcript" rows="14" placeholder="Alex: We decided…"></textarea>
+            </label>
+          </div>
+          <div class="mode-pane" data-pane="audio" hidden>
+            <label class="dropzone" for="audio-file">
+              <input id="audio-file" type="file" accept="audio/*,video/mp4,.wav,.mp3,.m4a,.ogg,.webm" />
+              <strong>Drop audio here</strong><span>WAV, MP3, M4A, OGG, or WEBM</span>
+            </label>
+            <p class="hint" id="audio-hint">Enable Whisper to transcribe uploads.</p>
+            <audio id="audio-preview" controls hidden></audio>
+            <button type="button" class="btn btn-secondary" id="transcribe-btn" disabled>Transcribe audio</button>
+          </div>
+          <div class="mode-pane" data-pane="sample" hidden>
+            <p class="sample-copy">Load a prepared project-sync conversation.</p>
+            <button type="button" class="btn btn-secondary" id="load-sample">Load sample transcript</button>
+          </div>
+          <div class="workspace-actions">
+            <p class="source-chip" id="source-chip" hidden></p>
+            <button type="button" class="btn btn-primary" id="generate-btn">Generate minutes</button>
+          </div>
+          <p class="status" id="status"></p>
+        </div>
+      </div>
+    </section>
+    <section class="minutes" id="minutes" hidden>
+      <div class="section-head"><h2>Structured minutes</h2></div>
+      <div class="stat-row" id="stat-row"></div>
+      <article class="minutes-doc" id="minutes-doc"></article>
+      <div class="download-row">
+        <button type="button" class="btn btn-secondary" id="download-md">Download Markdown</button>
+        <button type="button" class="btn btn-ghost" id="download-txt">Download text</button>
+      </div>
+    </section>
+  </main>
+  <button type="button" id="try-sample-hero" hidden></button>
+  <script src="/static/js/tools-app.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, getUser, formatWhen, toast } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+
+    const user = getUser();
+    const hour = new Date().getHours();
+    const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+    const content = mountShell({ title: "Dashboard", active: "/dashboard" });
+
+    content.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:end">
+        <div>
+          <h1 style="font-family:var(--font-display);margin:0">${greet}, ${user.full_name.split(" ")[0]}</h1>
+          <p class="muted">Here's what's happening with your meetings.</p>
+        </div>
+        <a class="btn btn-primary" href="/meetings/create">+ New Meeting</a>
+      </div>
+      <div class="stat-grid" id="stats"></div>
+      <h2 style="font-family:var(--font-display)">Upcoming Meetings</h2>
+      <div class="meeting-list" id="upcoming"></div>
+      <h2 style="font-family:var(--font-display);margin-top:1.5rem">Recent Meetings</h2>
+      <div class="meeting-list" id="recent"></div>
+    `;
+
+    try {
+      const meetings = await api("/api/meetings");
+      const upcoming = meetings.filter((m) => m.status === "scheduled" || m.status === "live");
+      const recent = meetings.filter((m) => m.status === "ended").slice(0, 6);
+      const hours = meetings.reduce((sum, m) => sum + (m.duration_minutes || 0), 0) / 60;
+      const notes = meetings.filter((m) => m.has_notes).length;
+      document.getElementById("stats").innerHTML = `
+        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${upcoming.length}</strong><div class="muted">Upcoming Meetings</div></div>
+        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${meetings.length}</strong><div class="muted">Meetings This Month</div></div>
+        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${hours.toFixed(1)}</strong><div class="muted">Total Meeting Hours</div></div>
+        <div class="card"><strong style="font-size:1.6rem;font-family:var(--font-display)">${notes}</strong><div class="muted">Notes Generated</div></div>
+      `;
+      const render = (list, el, empty) => {
+        if (!list.length) {
+          el.innerHTML = `<div class="empty">${empty}</div>`;
+          return;
+        }
+        el.innerHTML = list
+          .map(
+            (m) => `
+          <div class="meeting-row">
+            <div>
+              <strong>${m.title}</strong>
+              <div class="muted">${formatWhen(m.scheduled_start || m.created_at)} · ${m.participant_count || 0} participants · <span class="badge ${m.status}">${m.status}</span></div>
+            </div>
+            <div style="display:flex;gap:0.4rem">
+              <a class="btn btn-secondary" href="/meeting/${m.public_id}">Join</a>
+              <a class="btn btn-ghost" href="/meetings/${m.public_id}">Open</a>
+            </div>
+          </div>`
+          )
+          .join("");
+      };
+      render(upcoming, document.getElementById("upcoming"), "No upcoming meetings. Create one to get started.");
+      render(recent, document.getElementById("recent"), "No completed meetings yet.");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  </script>
+</body>
+</html>

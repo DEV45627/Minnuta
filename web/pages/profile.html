@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Profile — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, getUser, setSession, getToken, toast } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+    const user = getUser();
+    const content = mountShell({ title: "Profile", active: "/settings" });
+    content.innerHTML = `
+      <h1 style="font-family:var(--font-display)">Profile</h1>
+      <form class="card form-stack" id="form" style="max-width:480px">
+        <label class="field"><span>Full name</span><input name="full_name" value="${user.full_name || ""}" required /></label>
+        <label class="field"><span>Email</span><input value="${user.email || ""}" disabled /></label>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </form>`;
+    document.getElementById("form").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        const full_name = new FormData(e.target).get("full_name");
+        const updated = await api("/api/users/me", {
+          method: "PATCH",
+          body: JSON.stringify({ full_name }),
+        });
+        setSession(getToken(), updated);
+        toast("Profile updated", "ok");
+      } catch (err) {
+        toast(err.message, "error");
+      }
+    };
+  </script>
+</body>
+</html>

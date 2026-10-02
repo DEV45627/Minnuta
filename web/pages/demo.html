@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Demo — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div class="ambient"></div>
+  <header class="topbar">
+    <a class="brand-mark" href="/"><span class="brand-glyph"></span> Minuta</a>
+    <nav class="top-nav"><a href="/login">Log in</a></nav>
+  </header>
+  <main class="workspace">
+    <div class="section-head">
+      <h2>Try Demo Meeting</h2>
+      <p>M.Sc. Capstone Project Discussion — transcript, AI summary, decisions, and action items without setup.</p>
+    </div>
+    <div id="demo" class="card">Loading demo…</div>
+  </main>
+  <script type="module">
+    import { api, setSession, toast } from "/static/js/api.js";
+    try {
+      const boot = await api("/api/demo/bootstrap", { method: "POST", body: "{}" });
+      setSession(boot.access_token, boot.user);
+      const data = await api("/api/demo/meeting");
+      const m = data.meeting;
+      const n = data.note || {};
+      document.getElementById("demo").innerHTML = `
+        <h3>${m.title}</h3>
+        <p class="muted">Demo login: ${boot.credentials.email} / ${boot.credentials.password}</p>
+        <p><strong>Summary</strong></p>
+        <p>${n.summary || ""}</p>
+        <p><strong>Key points</strong></p>
+        <ul>${(n.key_points||[]).map(p=>`<li>${p}</li>`).join("")}</ul>
+        <p><strong>Decisions</strong></p>
+        <ul>${(n.decisions||[]).map(d=>`<li>${d}</li>`).join("")}</ul>
+        <p><strong>Action items</strong></p>
+        <table style="width:100%;border-collapse:collapse">
+          <tr><th align=left>Task</th><th>Assigned To</th><th>Deadline</th></tr>
+          ${(n.action_items||[]).map(a=>`<tr><td>${a.task}</td><td>${a.assignee}</td><td>${a.deadline}</td></tr>`).join("")}
+        </table>
+        <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap">
+          <a class="btn btn-primary" href="/meetings/${m.public_id}">Open meeting details</a>
+          <a class="btn btn-secondary" href="/dashboard">Go to dashboard</a>
+        </div>
+      `;
+    } catch (err) {
+      document.getElementById("demo").textContent = err.message;
+      toast(err.message, "error");
+    }
+  </script>
+</body>
+</html>

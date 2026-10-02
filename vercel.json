@@ -1,0 +1,98 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "name": "minuta-web",
+  "buildCommand": "",
+  "outputDirectory": "web",
+  "cleanUrls": false,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/static/css/:path*",
+      "destination": "/css/:path*"
+    },
+    {
+      "source": "/static/js/:path*",
+      "destination": "/js/:path*"
+    },
+    {
+      "source": "/meetings/create",
+      "destination": "/pages/meeting-create.html"
+    },
+    {
+      "source": "/meetings/:id",
+      "destination": "/pages/meeting-details.html"
+    },
+    {
+      "source": "/meeting/:id",
+      "destination": "/pages/meeting-room.html"
+    },
+    {
+      "source": "/join/:id",
+      "destination": "/pages/meeting-room.html"
+    },
+    {
+      "source": "/login",
+      "destination": "/pages/login.html"
+    },
+    {
+      "source": "/register",
+      "destination": "/pages/register.html"
+    },
+    {
+      "source": "/forgot-password",
+      "destination": "/pages/forgot-password.html"
+    },
+    {
+      "source": "/reset-password",
+      "destination": "/pages/reset-password.html"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/pages/dashboard.html"
+    },
+    {
+      "source": "/meetings",
+      "destination": "/pages/meetings.html"
+    },
+    {
+      "source": "/calendar",
+      "destination": "/pages/calendar.html"
+    },
+    {
+      "source": "/transcripts",
+      "destination": "/pages/transcripts.html"
+    },
+    {
+      "source": "/notes",
+      "destination": "/pages/notes.html"
+    },
+    {
+      "source": "/settings",
+      "destination": "/pages/settings.html"
+    },
+    {
+      "source": "/profile",
+      "destination": "/pages/profile.html"
+    },
+    {
+      "source": "/tools",
+      "destination": "/pages/tools.html"
+    },
+    {
+      "source": "/demo",
+      "destination": "/pages/demo.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    }
+  ]
+}

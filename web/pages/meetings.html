@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meetings — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, formatWhen, toast } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+    const content = mountShell({ title: "Meetings", active: "/meetings" });
+    const params = new URLSearchParams(location.search);
+    const filter = params.get("filter") || "all";
+    const q = params.get("q") || "";
+
+    content.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap">
+        <div>
+          <h1 style="font-family:var(--font-display);margin:0">Meeting history</h1>
+          <p class="muted">Filter and open past or upcoming meetings.</p>
+        </div>
+        <a class="btn btn-primary" href="/meetings/create">+ New Meeting</a>
+      </div>
+      <div class="tabs-row" id="filters">
+        ${["all","upcoming","completed","recorded","has_transcript","has_notes"].map(f =>
+          `<button data-f="${f}" class="${f===filter?"active":""}">${f.replace("_"," ")}</button>`
+        ).join("")}
+      </div>
+      <div class="meeting-list" id="list"></div>
+    `;
+
+    document.getElementById("filters").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-f]");
+      if (!btn) return;
+      const f = btn.dataset.f;
+      location.href = f === "all" ? "/meetings" : `/meetings?filter=${f}`;
+    });
+
+    try {
+      const qs = new URLSearchParams();
+      if (filter !== "all") qs.set("filter", filter);
+      if (q) qs.set("q", q);
+      const meetings = await api(`/api/meetings?${qs}`);
+      const list = document.getElementById("list");
+      if (!meetings.length) {
+        list.innerHTML = `<div class="empty">No meetings found.</div>`;
+      } else {
+        list.innerHTML = meetings.map(m => `
+          <div class="meeting-row">
+            <div>
+              <strong>${m.title}</strong>
+              <div class="muted">${formatWhen(m.scheduled_start || m.created_at)} · ${m.duration_minutes} min ·
+                transcript ${m.has_transcript ? "✓" : "—"} · notes ${m.has_notes ? "✓" : "—"}
+                · <span class="badge ${m.status}">${m.status}</span>
+              </div>
+            </div>
+            <a class="btn btn-secondary" href="/meetings/${m.public_id}">Open</a>
+          </div>`).join("");
+      }
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  </script>
+</body>
+</html>

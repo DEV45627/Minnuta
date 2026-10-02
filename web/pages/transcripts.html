@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Transcripts — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, api, formatWhen, toast } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+    const content = mountShell({ title: "Transcripts", active: "/transcripts" });
+    content.innerHTML = `<h1 style="font-family:var(--font-display)">Transcripts</h1><div id="list" class="meeting-list"></div>`;
+    try {
+      const meetings = (await api("/api/meetings")).filter(m => m.has_transcript);
+      document.getElementById("list").innerHTML = meetings.length ? meetings.map(m => `
+        <a class="meeting-row" href="/meetings/${m.public_id}" style="text-decoration:none;color:inherit">
+          <div>
+            <strong>${m.title}</strong>
+            <div class="muted">${formatWhen(m.scheduled_start || m.created_at)} · <span class="badge ${m.status}">${m.status}</span></div>
+          </div>
+        </a>`).join("") : `<div class="empty">No transcripts yet.</div>`;
+    } catch (err) {
+      toast(err.message, "error");
+    }
+  </script>
+</body>
+</html>

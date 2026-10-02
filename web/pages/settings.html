@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — Minuta</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/design-system.css" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { requireAuth, getUser } from "/static/js/api.js";
+    import { mountShell } from "/static/js/shell.js";
+    if (!requireAuth()) throw new Error("auth");
+    const user = getUser();
+    const content = mountShell({ title: "Settings", active: "/settings" });
+    content.innerHTML = `
+      <h1 style="font-family:var(--font-display)">Settings</h1>
+      <div class="card" style="max-width:560px">
+        <p><strong>Account</strong></p>
+        <p class="muted">${user.email}</p>
+        <p><strong>AI provider</strong></p>
+        <p class="muted">Demo NLP pipeline (local). Configure OPENAI_API_KEY later for LLM mode.</p>
+        <p><strong>WebRTC</strong></p>
+        <p class="muted">Mesh P2P for small meetings (about 2–6 participants). SFU support is a future enhancement.</p>
+        <a class="btn btn-secondary" href="/profile">Edit profile</a>
+      </div>`;
+  </script>
+</body>
+</html>
