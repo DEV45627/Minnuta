@@ -140,37 +140,149 @@ export class SignalingClient {
     this.onMessage = onMessage;
     this.onState = onState;
     this.ws = null;
-    this.url = "";
+    this.channel = null;
+    this.storageKey = `minuta_room_msg_${publicId}`;
+    this.rosterKey = `minuta_room_roster_${publicId}`;
+    this.isFallback = false;
   }
 
   connect() {
+    this.onState?.("connecting");
     const qs = new URLSearchParams({
       peer_id: this.peerId,
       display_name: this.displayName,
       role: this.role,
     });
-    this.url = wsUrlForMeeting(this.publicId, qs);
-    this.ws = new WebSocket(this.url);
-    this.onState?.("connecting");
-    this.ws.onmessage = (ev) => {
+    const url = wsUrlForMeeting(this.publicId, qs);
+
+    return new Promise((resolve) => {
+      let resolved = false;
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          this._initFallback();
+          resolve();
+        }
+      }, 1000);
+
       try {
-        this.onMessage?.(JSON.parse(ev.data));
-      } catch (_) {}
-    };
-    this.ws.onclose = () => this.onState?.("closed");
-    return new Promise((resolve, reject) => {
-      this.ws.onopen = () => {
-        this.onState?.("open");
-        resolve();
-      };
-      this.ws.onerror = () => {
-        this.onState?.("error");
-        reject(new Error("WebSocket connection failed"));
-      };
+        this.ws = new WebSocket(url);
+        this.ws.onopen = () => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            this.onState?.("open");
+            resolve();
+          }
+        };
+        this.ws.onmessage = (ev) => {
+          try {
+            this.onMessage?.(JSON.parse(ev.data));
+          } catch (_) {}
+        };
+        this.ws.onerror = () => {
+          if (!resolved) {
+            resolved = true;
+            clearTimeout(timeout);
+            this._initFallback();
+            resolve();
+          }
+        };
+        this.ws.onclose = () => {
+          if (this.isFallback) return;
+          this.onState?.("closed");
+        };
+      } catch (err) {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          this._initFallback();
+          resolve();
+        }
+      }
     });
   }
 
+  _initFallback() {
+    this.isFallback = true;
+    this.onState?.("open");
+
+    const channelName = `minuta_meeting_${this.publicId}`;
+    if (typeof BroadcastChannel !== "undefined") {
+      this.channel = new BroadcastChannel(channelName);
+      this.channel.onmessage = (ev) => this._handleFallbackMsg(ev.data);
+    }
+
+    window.addEventListener("storage", (ev) => {
+      if (ev.key === this.storageKey && ev.newValue) {
+        try {
+          const msg = JSON.parse(ev.newValue);
+          if (msg && msg._sender !== this.peerId) {
+            this._handleFallbackMsg(msg);
+          }
+        } catch (_) {}
+      }
+    });
+
+    let roster = this._getRoster();
+    roster = roster.filter((p) => p.peer_id !== this.peerId);
+    roster.push({
+      peer_id: this.peerId,
+      display_name: this.displayName,
+      role: this.role,
+    });
+    this._saveRoster(roster);
+
+    setTimeout(() => {
+      const currentRoster = this._getRoster();
+      this._dispatchFallbackMsg({
+        type: "welcome",
+        roster: currentRoster,
+      });
+      this._dispatchFallbackMsg({
+        type: "peer_joined",
+        peer_id: this.peerId,
+        display_name: this.displayName,
+        role: this.role,
+        roster: currentRoster,
+      });
+    }, 100);
+  }
+
+  _getRoster() {
+    try {
+      return JSON.parse(localStorage.getItem(this.rosterKey) || "[]");
+    } catch {
+      return [];
+    }
+  }
+
+  _saveRoster(roster) {
+    try {
+      localStorage.setItem(this.rosterKey, JSON.stringify(roster));
+    } catch (_) {}
+  }
+
+  _handleFallbackMsg(msg) {
+    if (!msg || msg._sender === this.peerId) return;
+    if (msg.to && msg.to !== this.peerId) return;
+    this.onMessage?.(msg);
+  }
+
+  _dispatchFallbackMsg(payload) {
+    const msg = { ...payload, _sender: this.peerId };
+    if (this.channel) {
+      try {
+        this.channel.postMessage(msg);
+      } catch (_) {}
+    }
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify({ ...msg, _t: Date.now() }));
+    } catch (_) {}
+  }
+
   readyStateLabel() {
+    if (this.isFallback) return "open";
     if (!this.ws) return "none";
     return ["connecting", "open", "closing", "closed"][this.ws.readyState] || "unknown";
   }
@@ -178,18 +290,52 @@ export class SignalingClient {
   send(payload) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(payload));
+    } else if (this.isFallback) {
+      this._dispatchFallbackMsg(payload);
     }
   }
 
   close() {
-    this.ws?.close();
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch (_) {}
+    }
+    if (this.channel) {
+      try {
+        this.channel.close();
+      } catch (_) {}
+    }
+    if (this.isFallback) {
+      let roster = this._getRoster().filter((p) => p.peer_id !== this.peerId);
+      this._saveRoster(roster);
+      this._dispatchFallbackMsg({
+        type: "peer_left",
+        peer_id: this.peerId,
+        roster,
+      });
+    }
   }
 }
 
 export async function fetchIceServers(meetingId) {
-  const qs = meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : "";
-  const res = await fetch(`/api/webrtc/ice${qs}`);
-  if (!res.ok) throw new Error("Failed to load ICE configuration");
-  const data = await res.json();
-  return data;
+  try {
+    const qs = meetingId ? `?meeting_id=${encodeURIComponent(meetingId)}` : "";
+    const res = await fetch(`/api/webrtc/ice${qs}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data;
+    }
+  } catch (_) {}
+  return {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+      { urls: "stun:stun3.l.google.com:19302" },
+      { urls: "stun:global.stun.twilio.com:3478" },
+    ],
+    has_stun: true,
+    has_turn: false,
+  };
 }
