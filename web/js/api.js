@@ -111,27 +111,132 @@ export async function api(path, options = {}) {
     return { access_token, token_type: "bearer", user };
   }
 
+  // Handle Meetings routes in static fallback mode
   if (path.includes("/api/meetings")) {
-    return [
-      {
-        public_id: "4GQF74",
-        title: "Q3 Product Strategy & Architecture",
-        status: "completed",
+    const getSavedMeetings = () => {
+      try {
+        const stored = localStorage.getItem("minuta_meetings");
+        if (stored) return JSON.parse(stored);
+      } catch (_) {}
+      const defaultList = [
+        {
+          public_id: "4GQF74",
+          title: "Q3 Product Strategy & Architecture",
+          description: "Review architecture, roadmaps, and Q3 deliverables.",
+          agenda: "1. Architecture Overview\n2. Security Audit\n3. Q3 Roadmap",
+          status: "completed",
+          scheduled_start: new Date().toISOString(),
+          duration_minutes: 45,
+          has_transcript: true,
+          has_notes: true,
+          link: `${window.location.origin}/meeting/4GQF74`,
+          requires_password: false,
+        },
+        {
+          public_id: "7XK29P",
+          title: "Sprint Planning & Backlog Grooming",
+          description: "Weekly sprint planning and feature estimation.",
+          agenda: "1. Backlog Review\n2. Capacity Planning",
+          status: "scheduled",
+          scheduled_start: new Date(Date.now() + 86400000).toISOString(),
+          duration_minutes: 30,
+          has_transcript: false,
+          has_notes: false,
+          link: `${window.location.origin}/meeting/7XK29P`,
+          requires_password: false,
+        },
+      ];
+      localStorage.setItem("minuta_meetings", JSON.stringify(defaultList));
+      return defaultList;
+    };
+
+    const saveMeetings = (list) => {
+      localStorage.setItem("minuta_meetings", JSON.stringify(list));
+    };
+
+    const meetings = getSavedMeetings();
+
+    // 1. Join Meeting: POST /api/meetings/:id/join
+    if (path.includes("/join")) {
+      const parts = path.split("/");
+      const joinIdx = parts.indexOf("join");
+      const meetingId = joinIdx > 0 ? parts[joinIdx - 1] : "4GQF74";
+      const target = meetings.find((m) => m.public_id === meetingId) || {
+        public_id: meetingId,
+        title: "Live Interactive Meeting",
+        status: "scheduled",
+        scheduled_start: new Date().toISOString(),
+        duration_minutes: 45,
+        link: `${window.location.origin}/meeting/${meetingId}`,
+      };
+      const body = options.body ? JSON.parse(options.body) : {};
+      return {
+        participant: {
+          role: "host",
+          display_name: body.display_name || "Host",
+        },
+        meeting: target,
+      };
+    }
+
+    // 2. End Meeting: POST /api/meetings/:id/end
+    if (path.includes("/end")) {
+      return { status: "ended" };
+    }
+
+    // 3. Create Meeting: POST /api/meetings
+    if (options.method === "POST" && !path.split("/api/meetings")[1].replace(/^\//, "")) {
+      const body = options.body ? JSON.parse(options.body) : {};
+      const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newMeeting = {
+        public_id: newId,
+        title: body.title || "New Meeting",
+        description: body.description || "",
+        agenda: body.agenda || "",
+        status: "scheduled",
+        scheduled_start: body.scheduled_start || new Date().toISOString(),
+        duration_minutes: Number(body.duration_minutes || 60),
+        has_transcript: false,
+        has_notes: false,
+        link: `${window.location.origin}/meeting/${newId}`,
+        requires_password: !!body.join_password,
+      };
+      meetings.unshift(newMeeting);
+      saveMeetings(meetings);
+      return newMeeting;
+    }
+
+    // 4. Get Single Meeting Details: GET /api/meetings/:id
+    const subPath = path.split("/api/meetings")[1].replace(/^\//, "");
+    if (subPath && !subPath.includes("?")) {
+      const meetingId = subPath.split("/")[0];
+      const target = meetings.find((m) => m.public_id === meetingId);
+      if (target) return target;
+      return {
+        public_id: meetingId,
+        title: "Live Interactive Meeting",
+        description: "Interactive session room",
+        agenda: "1. Discussion\n2. Q&A",
+        status: "scheduled",
         scheduled_start: new Date().toISOString(),
         duration_minutes: 45,
         has_transcript: true,
         has_notes: true,
-      },
-      {
-        public_id: "7XK29P",
-        title: "Sprint Planning & Backlog Grooming",
-        status: "scheduled",
-        scheduled_start: new Date(Date.now() + 86400000).toISOString(),
-        duration_minutes: 30,
-        has_transcript: false,
-        has_notes: false,
-      },
-    ];
+        link: `${window.location.origin}/meeting/${meetingId}`,
+        requires_password: false,
+      };
+    }
+
+    // 5. List All Meetings: GET /api/meetings
+    return meetings;
+  }
+
+  if (path.includes("/api/chat")) {
+    return [];
+  }
+
+  if (path.includes("/api/recordings")) {
+    return { ok: true };
   }
 
   if (path.includes("/api/notes")) {
