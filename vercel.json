@@ -1,8 +1,7 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "name": "minuta-web",
-  "buildCommand": "",
+  "buildCommand": "echo 'Static build complete'",
   "outputDirectory": "web",
   "cleanUrls": false,
   "trailingSlash": false,
