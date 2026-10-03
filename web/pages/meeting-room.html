@@ -186,28 +186,33 @@
       const anyRemote = remotes.some((r) => r.connection === "connected");
       const anyIceOk = remotes.some((r) => r.ice === "connected" || r.ice === "completed");
       const anyIceFail = remotes.some((r) => r.ice === "failed");
+      const peerJsStreams = signaling?.activeStreams?.size || 0;
+      const peerJsSlot = signaling?.slotIndex >= 0 ? signaling.slotIndex : "—";
+      const peerJsConns = signaling?.peerJsConns?.size || 0;
+      const sigLabel = signaling?.readyStateLabel?.() || wsState;
       return `
         <div class="diag-panel">
           <div class="diag-row"><span>Server URL</span><strong>${location.origin}</strong></div>
           <div class="diag-row"><span>Meeting ID</span><strong>${publicId}</strong></div>
-          <div class="diag-row"><span>Signaling</span><strong>${wsState === "open" ? "Connected" : wsState === "error" || wsState === "closed" ? "Disconnected" : wsState}</strong></div>
-          <div class="diag-row"><span>WebRTC</span><strong>${anyRemote ? "Connected" : remotes.length ? "Connecting / Failed" : "Waiting"}</strong></div>
-          <div class="diag-row"><span>ICE</span><strong>${anyIceOk ? "Connected" : anyIceFail ? "Failed" : remotes.length ? "Checking" : "—"}</strong></div>
+          <div class="diag-row"><span>Signaling</span><strong>${sigLabel}</strong></div>
+          <div class="diag-row"><span>PeerJS Slot</span><strong>${peerJsSlot}</strong></div>
+          <div class="diag-row"><span>PeerJS Data Channels</span><strong>${peerJsConns}</strong></div>
+          <div class="diag-row"><span>Active Media Streams</span><strong>${peerJsStreams}</strong></div>
           <div class="diag-row"><span>Local microphone</span><strong>${media.mic === "on" ? "Active" : media.mic === "muted" ? "Inactive" : "Missing"}</strong></div>
           <div class="diag-row"><span>Local camera</span><strong>${media.cam === "on" ? "Active" : media.cam === "off" ? "Inactive" : "Missing"}</strong></div>
-          <div class="diag-row"><span>Remote participant</span><strong>${Math.max(0, (roster.length || 1) - 1) > 0 ? "Connected" : "Disconnected"}</strong></div>
+          <div class="diag-row"><span>Roster size</span><strong>${roster.length}</strong></div>
           <div class="diag-row"><span>STUN configured</span><strong>${iceMeta.has_stun ? "Yes" : "No"}</strong></div>
-          <div class="diag-row"><span>TURN configured</span><strong>${iceMeta.has_turn ? "Yes" : "No (cross-network may fail)"}</strong></div>
+          <div class="diag-row"><span>TURN configured</span><strong>${signaling?.isFallback ? "Yes (Metered TURN)" : iceMeta.has_turn ? "Yes" : "No"}</strong></div>
           ${remotes.map(r => `
             <div class="diag-peer">
-              <div><strong>${r.peerId.slice(0, 8)}…</strong></div>
+              <div><strong>${(r.peerId || "").slice(0, 20)}…</strong></div>
               <div>WebRTC: ${r.connection === "connected" ? "Connected" : (r.connection || "—")}</div>
               <div>ICE: ${r.ice === "connected" || r.ice === "completed" ? "Connected" : (r.ice || "—")}</div>
               <div>ICE types: ${(r.candidateTypes || []).join(", ") || "—"} <span class="muted">(host / srflx / relay)</span></div>
             </div>
-          `).join("") || `<p class="muted">No remote WebRTC peers yet.</p>`}
+          `).join("") || `<p class="muted">PeerJS slot scanner active — probing other slots every 3s.</p>`}
           <p class="muted" style="margin-top:0.75rem;font-size:0.8rem">
-            Public hosting alone does not guarantee media. Without TURN, restrictive NATs can block WebRTC.
+            Media exchange via PeerJS peer.call() with TURN relay. Open console (F12) for detailed logs.
           </p>
         </div>
       `;
@@ -331,6 +336,7 @@
         role,
         localStream,
         onRemoteStream: (id, stream) => {
+          // PeerJS MediaConnection delivered a remote stream — show it
           const meta = roster.find((p) => p.peer_id === id);
           addTile(id, stream, meta?.display_name || "Participant");
           if (side === "diag") renderSide();
@@ -342,25 +348,31 @@
         onMessage: async (msg) => {
           if (msg.type === "welcome") {
             roster = msg.roster || [];
-            for (const p of roster) {
-              if (p.peer_id !== peerId && p.peer_id !== signaling.peerJsId) await mesh.call(p.peer_id);
+            // In PeerJS fallback mode, media is handled by peer.call() / peer.on("call")
+            // Only call mesh.call() if we have a live WebSocket (non-fallback)
+            if (mesh && !signaling.isFallback) {
+              for (const p of roster) {
+                if (p.peer_id !== peerId) await mesh.call(p.peer_id);
+              }
             }
             renderSide();
           } else if (msg.type === "peer_joined") {
             roster = msg.roster || roster;
-            if (msg.peer_id !== peerId && msg.peer_id !== signaling.peerJsId) await mesh.call(msg.peer_id);
+            if (mesh && !signaling.isFallback && msg.peer_id !== peerId) {
+              await mesh.call(msg.peer_id);
+            }
             renderSide();
           } else if (msg.type === "peer_left") {
             roster = msg.roster || roster;
-            mesh.closePeer(msg.peer_id);
+            if (mesh) mesh.closePeer(msg.peer_id);
             removeTile(msg.peer_id);
             renderSide();
-          } else if (msg.type === "offer") {
-            await mesh.handleOffer(msg.from, msg.sdp);
-          } else if (msg.type === "answer") {
-            await mesh.handleAnswer(msg.from, msg.sdp);
-          } else if (msg.type === "ice_candidate") {
-            await mesh.handleIce(msg.from, msg.candidate);
+          } else if (msg.type === "offer" && mesh) {
+            await mesh.handleOffer(msg._sender || msg.from, msg.sdp);
+          } else if (msg.type === "answer" && mesh) {
+            await mesh.handleAnswer(msg._sender || msg.from, msg.sdp);
+          } else if (msg.type === "ice_candidate" && mesh) {
+            await mesh.handleIce(msg._sender || msg.from, msg.candidate);
           } else if (msg.type === "chat_message") {
             chatMessages.push(msg);
             if (side === "chat") renderSide();
@@ -378,26 +390,31 @@
         },
       });
 
-      mesh = new MeshRoom({
-        signaling,
-        localStream,
-        iceServers: iceConfig.iceServers || [{ urls: "stun:stun.l.google.com:19302" }],
-        onRemoteStream: (id, stream) => {
-          const meta = roster.find((p) => p.peer_id === id);
-          addTile(id, stream, meta?.display_name || "Participant");
-          if (side === "diag") renderSide();
-        },
-        onPeerLeft: (id) => {
-          removeTile(id);
-          if (side === "diag") renderSide();
-        },
-        onPeerState: (id, state) => {
-          peerDiag.set(id, state);
-          if (side === "diag") renderSide();
-        },
-      });
-
       await signaling.connect();
+
+      // Only create MeshRoom for WebSocket-based signaling (not PeerJS fallback)
+      // In fallback mode, PeerJS peer.call() / peer.on("call") handles all media
+      if (!signaling.isFallback) {
+        mesh = new MeshRoom({
+          signaling,
+          localStream,
+          iceServers: iceConfig.iceServers || [{ urls: "stun:stun.l.google.com:19302" }],
+          onRemoteStream: (id, stream) => {
+            const meta = roster.find((p) => p.peer_id === id);
+            addTile(id, stream, meta?.display_name || "Participant");
+            if (side === "diag") renderSide();
+          },
+          onPeerLeft: (id) => {
+            removeTile(id);
+            if (side === "diag") renderSide();
+          },
+          onPeerState: (id, state) => {
+            peerDiag.set(id, state);
+            if (side === "diag") renderSide();
+          },
+        });
+      }
+
       renderSide();
 
       // Load chat history
@@ -433,16 +450,18 @@
           if (screenTrack) {
             screenTrack.stop();
             screenTrack = null;
-            if (camTrack) mesh.replaceVideoTrack(camTrack);
+            if (camTrack) {
+              if (mesh) mesh.replaceVideoTrack(camTrack);
+            }
             toast("Screen share stopped", "ok");
             return;
           }
           const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
           screenTrack = screen.getVideoTracks()[0];
-          mesh.replaceVideoTrack(screenTrack);
+          if (mesh) mesh.replaceVideoTrack(screenTrack);
           screenTrack.onended = () => {
             screenTrack = null;
-            if (camTrack) mesh.replaceVideoTrack(camTrack);
+            if (camTrack && mesh) mesh.replaceVideoTrack(camTrack);
           };
           toast("Sharing screen", "ok");
         } catch (err) {
@@ -508,7 +527,7 @@
     function leave() {
       recognition?.stop();
       signaling?.close();
-      mesh?.closeAll();
+      if (mesh) mesh.closeAll();
       localStream?.getTracks().forEach(t => t.stop());
       location.href = `/meetings/${publicId}`;
     }

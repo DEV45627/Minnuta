@@ -5,11 +5,10 @@ function wsUrlForMeeting(publicId, qs) {
   return `${proto}://${location.host}/ws/meetings/${publicId}?${qs}`;
 }
 
-function candidateType(candidate) {
-  const m = String(candidate?.candidate || candidate || "").match(/\btyp\s+(\w+)/i);
-  return m ? m[1] : null;
-}
-
+/* ───────────────────────────────────────────────────────
+   MeshRoom – only used when a live WebSocket server exists.
+   On static Vercel deploys PeerJS handles media directly.
+   ─────────────────────────────────────────────────────── */
 export class MeshRoom {
   constructor({ signaling, localStream, iceServers, onRemoteStream, onPeerLeft, onPeerState }) {
     this.signaling = signaling;
@@ -36,23 +35,11 @@ export class MeshRoom {
     this.localStream?.getTracks().forEach((track) => pc.addTrack(track, this.localStream));
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
-        const typ = candidateType(ev.candidate);
-        if (typ) {
-          const prev = this.peerStates.get(peerId)?.candidateTypes || [];
-          if (!prev.includes(typ)) {
-            this._setState(peerId, { candidateTypes: [...prev, typ] });
-          }
-        }
-        this.signaling.send({
-          type: "ice_candidate",
-          to: peerId,
-          candidate: ev.candidate,
-        });
+        this.signaling.send({ type: "ice_candidate", to: peerId, candidate: ev.candidate });
       }
     };
     pc.ontrack = (ev) => {
-      const stream = ev.streams[0];
-      this.onRemoteStream?.(peerId, stream);
+      this.onRemoteStream?.(peerId, ev.streams[0]);
     };
     pc.onconnectionstatechange = () => {
       this._setState(peerId, { connection: pc.connectionState });
@@ -64,11 +51,7 @@ export class MeshRoom {
       this._setState(peerId, { ice: pc.iceConnectionState });
     };
     this.pcs.set(peerId, pc);
-    this._setState(peerId, {
-      connection: pc.connectionState,
-      ice: pc.iceConnectionState,
-      candidateTypes: [],
-    });
+    this._setState(peerId, { connection: pc.connectionState, ice: pc.iceConnectionState, candidateTypes: [] });
     return pc;
   }
 
@@ -109,10 +92,7 @@ export class MeshRoom {
 
   closePeer(peerId) {
     const pc = this.pcs.get(peerId);
-    if (pc) {
-      pc.close();
-      this.pcs.delete(peerId);
-    }
+    if (pc) { pc.close(); this.pcs.delete(peerId); }
     this.peerStates.delete(peerId);
     this.onPeerLeft?.(peerId);
   }
@@ -122,13 +102,23 @@ export class MeshRoom {
   }
 
   diagnostics() {
-    return [...this.peerStates.entries()].map(([peerId, state]) => ({
-      peerId,
-      ...state,
-    }));
+    return [...this.peerStates.entries()].map(([peerId, state]) => ({ peerId, ...state }));
   }
 }
 
+/* ───────────────────────────────────────────────────────
+   SignalingClient – PeerJS-based signaling + media for
+   static Vercel deployments (no WebSocket server).
+
+   Architecture:
+   • Each participant registers a deterministic PeerJS ID
+     of the form  minuta_{meetingId}_slot{0..7}
+   • A background "slot scanner" (every 3 s) tries to
+     connect data + media to every other slot.
+   • PeerJS .call()/.on("call") handles the ENTIRE WebRTC
+     media negotiation internally (SDP + ICE).  No extra
+     MeshRoom is needed in this path.
+   ─────────────────────────────────────────────────────── */
 export class SignalingClient {
   constructor(publicId, { peerId, displayName, role, localStream, onRemoteStream, onMessage, onState }) {
     this.publicId = publicId;
@@ -146,12 +136,19 @@ export class SignalingClient {
     this.isFallback = false;
     this.peerjs = null;
     this.peerJsId = null;
-    this.peerJsConns = new Map();
-    this.peerJsCalls = new Map();
+    this.peerJsConns = new Map();   // slotId → DataConnection
+    this.peerJsCalls = new Map();   // slotId → MediaConnection
+    this.activeStreams = new Set();  // slotIds that delivered a stream
     this.slotIndex = -1;
     this.slotTimer = null;
+    this._log("Created SignalingClient", { publicId, peerId, displayName });
   }
 
+  _log(...args) {
+    console.log("[Minuta-WebRTC]", ...args);
+  }
+
+  /* ─── Primary connect path ─── */
   connect() {
     this.onState?.("connecting");
     const qs = new URLSearchParams({
@@ -166,6 +163,7 @@ export class SignalingClient {
       const timeout = setTimeout(() => {
         if (!resolved) {
           resolved = true;
+          this._log("WebSocket timeout – falling back to PeerJS");
           this._initFallback();
           resolve();
         }
@@ -177,19 +175,19 @@ export class SignalingClient {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
+            this._log("WebSocket connected");
             this.onState?.("open");
             resolve();
           }
         };
         this.ws.onmessage = (ev) => {
-          try {
-            this.onMessage?.(JSON.parse(ev.data));
-          } catch (_) {}
+          try { this.onMessage?.(JSON.parse(ev.data)); } catch (_) {}
         };
         this.ws.onerror = () => {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
+            this._log("WebSocket error – falling back to PeerJS");
             this._initFallback();
             resolve();
           }
@@ -209,16 +207,19 @@ export class SignalingClient {
     });
   }
 
+  /* ─── Fallback: BroadcastChannel + localStorage + PeerJS ─── */
   _initFallback() {
     this.isFallback = true;
     this.onState?.("open");
 
+    // BroadcastChannel (same-device tabs)
     const channelName = `minuta_meeting_${this.publicId}`;
     if (typeof BroadcastChannel !== "undefined") {
       this.channel = new BroadcastChannel(channelName);
       this.channel.onmessage = (ev) => this._handleFallbackMsg(ev.data);
     }
 
+    // localStorage (same-device different tabs)
     window.addEventListener("storage", (ev) => {
       if (ev.key === this.storageKey && ev.newValue) {
         try {
@@ -230,186 +231,243 @@ export class SignalingClient {
       }
     });
 
+    // PeerJS (cross-device via 0.peerjs.com cloud relay)
     this._initPeerJS();
   }
 
+  /* ─── PeerJS bootstrap ─── */
   _initPeerJS() {
     if (window.Peer) {
       this._setupPeerJS();
       return;
     }
-    try {
-      const script = document.createElement("script");
-      script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
-      script.onload = () => this._setupPeerJS();
-      script.onerror = () => {
-        const backupScript = document.createElement("script");
-        backupScript.src = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
-        backupScript.onload = () => this._setupPeerJS();
-        document.head.appendChild(backupScript);
-      };
-      document.head.appendChild(script);
-    } catch (_) {}
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
+    script.onload = () => this._setupPeerJS();
+    script.onerror = () => {
+      const backup = document.createElement("script");
+      backup.src = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
+      backup.onload = () => this._setupPeerJS();
+      document.head.appendChild(backup);
+    };
+    document.head.appendChild(script);
   }
 
   _setupPeerJS() {
     if (!window.Peer || this.peerjs) return;
-
-    const maxSlots = 8;
-    const trySlot = (slot) => {
-      if (slot >= maxSlots) {
-        const fallbackId = `minuta_${this.publicId}_${crypto.randomUUID().slice(0, 6)}`;
-        this._bindPeerJsInstance(fallbackId, slot, () => {});
-        return;
-      }
-      const candidateId = `minuta_${this.publicId}_slot${slot}`;
-      this._bindPeerJsInstance(candidateId, slot, (err) => {
-        if (err?.type === "unavailable-id" || err?.type === "peer-unavailable" || err?.message?.includes("taken")) {
-          trySlot(slot + 1);
-        }
-      });
-    };
-
-    trySlot(0);
+    this._log("PeerJS library loaded, trying slot registration…");
+    this._trySlot(0);
   }
 
-  _bindPeerJsInstance(candidateId, slot, onErrorCallback) {
-    try {
-      const peer = new window.Peer(candidateId, {
-        config: {
-          iceServers: [
-            { urls: "stun:stun.l.google.com:19302" },
-            { urls: "stun:stun1.l.google.com:19302" },
-            { urls: "stun:stun2.l.google.com:19302" },
-            { urls: "stun:stun3.l.google.com:19302" },
-            { urls: "stun:global.stun.twilio.com:3478" },
-          ],
-        },
-      });
+  _trySlot(slot) {
+    const maxSlots = 8;
+    if (slot >= maxSlots) {
+      // All 8 slots taken – use a random ID as last resort
+      const fallbackId = `minuta_${this.publicId}_extra_${Math.random().toString(36).slice(2, 8)}`;
+      this._log("All slots taken, using random ID:", fallbackId);
+      this._createPeer(fallbackId, slot);
+      return;
+    }
+    const candidateId = `minuta_${this.publicId}_slot${slot}`;
+    this._log(`Trying slot ${slot}: ${candidateId}`);
+    this._createPeer(candidateId, slot, (err) => {
+      this._log(`Slot ${slot} taken (${err?.type}), trying next…`);
+      this._trySlot(slot + 1);
+    });
+  }
 
+  _createPeer(id, slot, onRegistrationError) {
+    try {
+      const iceServers = [
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:global.stun.twilio.com:3478" },
+        // Free TURN servers for NAT traversal across different networks
+        {
+          urls: "turn:a.relay.metered.ca:80",
+          username: "e8dd65b092860a7b0ac2f090",
+          credential: "5ujhNPGlR4+L1RaK",
+        },
+        {
+          urls: "turn:a.relay.metered.ca:443",
+          username: "e8dd65b092860a7b0ac2f090",
+          credential: "5ujhNPGlR4+L1RaK",
+        },
+        {
+          urls: "turn:a.relay.metered.ca:443?transport=tcp",
+          username: "e8dd65b092860a7b0ac2f090",
+          credential: "5ujhNPGlR4+L1RaK",
+        },
+      ];
+
+      const peer = new window.Peer(id, { config: { iceServers } });
       let registered = false;
 
-      peer.on("open", (id) => {
+      peer.on("open", (openId) => {
         registered = true;
         this.peerjs = peer;
         this.slotIndex = slot;
-        this.peerJsId = id;
+        this.peerJsId = openId;
+        this._log(`✅ PeerJS registered as ${openId} (slot ${slot})`);
 
+        // ── Handle incoming MEDIA calls ──
         peer.on("call", (call) => {
+          this._log(`📞 Incoming call from ${call.peer}`);
           const streamToSend = this.localStream || new MediaStream();
           call.answer(streamToSend);
-          this.peerJsCalls.set(call.peer, call);
-
-          call.on("stream", (remoteStream) => {
-            this.onRemoteStream?.(call.peer, remoteStream);
-          });
-          call.on("close", () => {
-            this.peerJsCalls.delete(call.peer);
-          });
-          call.on("error", () => {
-            this.peerJsCalls.delete(call.peer);
-          });
+          this._bindMediaCall(call.peer, call);
         });
 
+        // ── Handle incoming DATA connections ──
         peer.on("connection", (conn) => {
           conn.on("open", () => {
+            this._log(`📡 Incoming data conn from ${conn.peer}`);
+            this.peerJsConns.set(conn.peer, conn);
+            // Send welcome with our info
             try {
               conn.send({
                 type: "welcome",
-                roster: this._getPeerJsRoster(),
-                _sender: this.peerJsId || this.peerId,
+                roster: this._buildRoster(),
+                _sender: this.peerJsId,
               });
             } catch (_) {}
           });
           conn.on("data", (data) => {
-            if (data && data._sender) {
-              this.peerJsConns.set(data._sender, conn);
-            }
-            if (data && data.display_name) {
-              conn._displayName = data.display_name;
-            }
+            if (data && data._sender) this.peerJsConns.set(data._sender, conn);
+            if (data && data.display_name) conn._displayName = data.display_name;
             this._handleFallbackMsg(data);
           });
-          conn.on("close", () => {
-            if (conn._sender) this.peerJsConns.delete(conn._sender);
-          });
+          conn.on("close", () => this.peerJsConns.delete(conn.peer));
         });
 
+        // ── Handle PeerJS errors (e.g. peer-unavailable for non-existent slots) ──
+        peer.on("error", (err) => {
+          if (err?.type === "peer-unavailable") {
+            // Extract the failed peer ID from the error message
+            const match = err.message?.match(/peer\s+(\S+)/i);
+            if (match) {
+              const failedId = match[1];
+              this.peerJsCalls.delete(failedId);
+              this.activeStreams.delete(failedId);
+            }
+          }
+          // All other post-registration errors: log but don't crash
+          this._log("PeerJS error:", err?.type, err?.message);
+        });
+
+        // ── Start the slot scanner ──
         this._startSlotScanner();
       });
 
       peer.on("error", (err) => {
         if (!registered) {
+          // Registration failed (slot taken) – try next slot
           try { peer.destroy(); } catch (_) {}
-          onErrorCallback?.(err);
+          onRegistrationError?.(err);
         }
       });
     } catch (e) {
-      onErrorCallback?.(e);
+      onRegistrationError?.(e);
     }
   }
 
-  _getPeerJsRoster() {
-    const list = [];
-    for (const [id, conn] of this.peerJsConns.entries()) {
-      list.push({ peer_id: id, display_name: conn._displayName || "Participant", role: "participant" });
-    }
-    list.push({ peer_id: this.peerJsId || this.peerId, display_name: this.displayName, role: this.role });
-    return list;
+  /* ─── Bind a MediaConnection and track its lifecycle ─── */
+  _bindMediaCall(remoteId, call) {
+    this.peerJsCalls.set(remoteId, call);
+
+    call.on("stream", (remoteStream) => {
+      this._log(`🎥 Got video stream from ${remoteId}, tracks:`, remoteStream.getTracks().map(t => t.kind));
+      this.activeStreams.add(remoteId);
+      this.onRemoteStream?.(remoteId, remoteStream);
+    });
+
+    call.on("close", () => {
+      this._log(`❌ Media call closed: ${remoteId}`);
+      this.peerJsCalls.delete(remoteId);
+      this.activeStreams.delete(remoteId);
+    });
+
+    call.on("error", (err) => {
+      this._log(`❌ Media call error: ${remoteId}`, err);
+      this.peerJsCalls.delete(remoteId);
+      this.activeStreams.delete(remoteId);
+    });
+
+    // Safety timeout: if no stream received in 8 seconds, clean up so
+    // the slot scanner can retry on the next cycle.
+    setTimeout(() => {
+      if (!this.activeStreams.has(remoteId)) {
+        this._log(`⏰ Timeout waiting for stream from ${remoteId}, will retry`);
+        this.peerJsCalls.delete(remoteId);
+        try { call.close(); } catch (_) {}
+      }
+    }, 8000);
   }
 
+  /* ─── Slot scanner: discover & connect to other participants ─── */
   _startSlotScanner() {
     if (this.slotTimer) clearInterval(this.slotTimer);
 
     const scan = () => {
       if (!this.peerjs || this.peerjs.destroyed) return;
+
       for (let s = 0; s < 8; s++) {
         if (s === this.slotIndex) continue;
-        const targetSlotId = `minuta_${this.publicId}_slot${s}`;
+        const targetId = `minuta_${this.publicId}_slot${s}`;
 
-        if (!this.peerJsConns.has(targetSlotId) || !this.peerJsConns.get(targetSlotId)?.open) {
-          this._connectPeerJsSlot(targetSlotId);
+        // Skip if we already have an active media stream from this peer
+        if (this.activeStreams.has(targetId)) continue;
+
+        // Try DATA connection (for chat, roster, etc.)
+        const existingConn = this.peerJsConns.get(targetId);
+        if (!existingConn || !existingConn.open) {
+          this._connectDataChannel(targetId);
         }
 
-        if (!this.peerJsCalls.has(targetSlotId)) {
-          try {
-            const streamToSend = this.localStream || new MediaStream();
-            const call = this.peerjs.call(targetSlotId, streamToSend);
-            if (call) {
-              this.peerJsCalls.set(targetSlotId, call);
-              call.on("stream", (remoteStream) => {
-                this.onRemoteStream?.(targetSlotId, remoteStream);
-              });
-              call.on("close", () => {
-                this.peerJsCalls.delete(targetSlotId);
-              });
-              call.on("error", () => {
-                this.peerJsCalls.delete(targetSlotId);
-              });
-            }
-          } catch (_) {}
+        // Try MEDIA call (camera/microphone exchange)
+        if (!this.peerJsCalls.has(targetId)) {
+          this._callSlot(targetId);
         }
       }
     };
 
+    // First scan immediately, then every 3 seconds
     scan();
     this.slotTimer = setInterval(scan, 3000);
   }
 
-  _connectPeerJsSlot(targetSlotId) {
-    if (!this.peerjs) return;
+  _callSlot(targetId) {
+    if (!this.peerjs || this.peerjs.destroyed) return;
+    const streamToSend = this.localStream || new MediaStream();
     try {
-      const conn = this.peerjs.connect(targetSlotId);
+      this._log(`📞 Calling ${targetId}…`);
+      const call = this.peerjs.call(targetId, streamToSend);
+      if (call) {
+        this._bindMediaCall(targetId, call);
+      }
+    } catch (err) {
+      this._log(`Call to ${targetId} failed:`, err);
+    }
+  }
+
+  _connectDataChannel(targetId) {
+    if (!this.peerjs || this.peerjs.destroyed) return;
+    try {
+      const conn = this.peerjs.connect(targetId);
       conn._pending = [{
         type: "peer_joined",
-        peer_id: this.peerJsId || this.peerId,
+        peer_id: this.peerJsId,
         display_name: this.displayName,
         role: this.role,
-        roster: this._getPeerJsRoster(),
-        _sender: this.peerJsId || this.peerId,
+        roster: this._buildRoster(),
+        _sender: this.peerJsId,
       }];
+
       conn.on("open", () => {
-        this.peerJsConns.set(targetSlotId, conn);
+        this._log(`📡 Data channel open to ${targetId}`);
+        this.peerJsConns.set(targetId, conn);
         if (conn._pending) {
           for (const m of conn._pending) {
             try { conn.send(m); } catch (_) {}
@@ -418,52 +476,66 @@ export class SignalingClient {
         }
       });
       conn.on("data", (data) => {
-        if (data && data.display_name) {
-          conn._displayName = data.display_name;
-        }
-        if (data && data._sender) {
-          this.peerJsConns.set(data._sender, conn);
-        }
+        if (data && data.display_name) conn._displayName = data.display_name;
+        if (data && data._sender) this.peerJsConns.set(data._sender, conn);
         this._handleFallbackMsg(data);
       });
-      conn.on("close", () => {
-        this.peerJsConns.delete(targetSlotId);
-      });
-      conn.on("error", () => {
-        this.peerJsConns.delete(targetSlotId);
-      });
+      conn.on("close", () => this.peerJsConns.delete(targetId));
+      conn.on("error", () => this.peerJsConns.delete(targetId));
+
+      // Timeout: if data connection doesn't open in 6s, clean up for retry
+      setTimeout(() => {
+        if (!conn.open) {
+          this.peerJsConns.delete(targetId);
+          try { conn.close(); } catch (_) {}
+        }
+      }, 6000);
     } catch (_) {}
   }
 
+  /* ─── Roster helpers ─── */
+  _buildRoster() {
+    const list = [];
+    for (const [id, conn] of this.peerJsConns.entries()) {
+      if (conn.open) {
+        list.push({ peer_id: id, display_name: conn._displayName || "Participant", role: "participant" });
+      }
+    }
+    list.push({ peer_id: this.peerJsId || this.peerId, display_name: this.displayName, role: this.role });
+    return list;
+  }
+
+  /* ─── Fallback message handling ─── */
   _handleFallbackMsg(msg) {
     if (!msg) return;
     const sender = msg._sender || msg.from || msg.peer_id;
     if (sender === this.peerId || sender === this.peerJsId) return;
     if (msg.to && msg.to !== this.peerId && msg.to !== this.peerJsId) return;
 
+    // Enrich roster for join/welcome messages
     if (msg.type === "peer_joined" || msg.type === "welcome") {
-      const currentRoster = this._getPeerJsRoster();
-      msg.roster = currentRoster;
+      msg.roster = this._buildRoster();
     }
     this.onMessage?.(msg);
   }
 
   _dispatchFallbackMsg(payload) {
     const msg = { ...payload, _sender: this.peerJsId || this.peerId };
+
+    // BroadcastChannel (same-device tabs)
     if (this.channel) {
-      try {
-        this.channel.postMessage(msg);
-      } catch (_) {}
+      try { this.channel.postMessage(msg); } catch (_) {}
     }
+
+    // localStorage (same-device different tabs)
     try {
       localStorage.setItem(this.storageKey, JSON.stringify({ ...msg, _t: Date.now() }));
     } catch (_) {}
 
+    // PeerJS data connections (cross-device)
     for (const conn of this.peerJsConns.values()) {
       if (conn && conn.open) {
-        try {
-          conn.send(msg);
-        } catch (_) {}
+        try { conn.send(msg); } catch (_) {}
       } else if (conn) {
         if (!conn._pending) conn._pending = [];
         conn._pending.push(msg);
@@ -471,24 +543,13 @@ export class SignalingClient {
     }
   }
 
-  replaceVideoTrack(track) {
-    if (this.localStream) {
-      const senderTrack = this.localStream.getVideoTracks()[0];
-      if (senderTrack) {
-        this.localStream.removeTrack(senderTrack);
-      }
-      this.localStream.addTrack(track);
-    }
-    for (const call of this.peerJsCalls.values()) {
-      try {
-        const sender = call.peerConnection?.getSenders()?.find((s) => s.track && s.track.kind === "video");
-        if (sender) sender.replaceTrack(track);
-      } catch (_) {}
-    }
-  }
-
+  /* ─── Public API ─── */
   readyStateLabel() {
-    if (this.isFallback) return "open (slot " + (this.slotIndex >= 0 ? this.slotIndex : "connecting") + ")";
+    if (this.isFallback) {
+      const slot = this.slotIndex >= 0 ? `slot ${this.slotIndex}` : "connecting";
+      const streams = this.activeStreams.size;
+      return `PeerJS (${slot}, ${streams} stream${streams !== 1 ? "s" : ""})`;
+    }
     if (!this.ws) return "none";
     return ["connecting", "open", "closing", "closed"][this.ws.readyState] || "unknown";
   }
@@ -502,25 +563,28 @@ export class SignalingClient {
   }
 
   close() {
-    if (this.slotTimer) {
-      clearInterval(this.slotTimer);
-      this.slotTimer = null;
-    }
-    if (this.ws) {
-      try { this.ws.close(); } catch (_) {}
-    }
-    if (this.channel) {
-      try { this.channel.close(); } catch (_) {}
-    }
-    if (this.peerjs) {
-      try { this.peerjs.destroy(); } catch (_) {}
-    }
+    this._log("Closing SignalingClient");
+    if (this.slotTimer) { clearInterval(this.slotTimer); this.slotTimer = null; }
+    if (this.ws) { try { this.ws.close(); } catch (_) {} }
+    if (this.channel) { try { this.channel.close(); } catch (_) {} }
+
+    // Notify peers we're leaving
     if (this.isFallback) {
       this._dispatchFallbackMsg({
         type: "peer_left",
         peer_id: this.peerJsId || this.peerId,
+        display_name: this.displayName,
       });
     }
+
+    // Close all media calls
+    for (const call of this.peerJsCalls.values()) {
+      try { call.close(); } catch (_) {}
+    }
+    this.peerJsCalls.clear();
+    this.activeStreams.clear();
+
+    if (this.peerjs) { try { this.peerjs.destroy(); } catch (_) {} }
   }
 }
 
