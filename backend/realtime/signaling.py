@@ -130,6 +130,8 @@ async def meeting_ws(websocket: WebSocket, public_id: str):
     room = hub.room(public_id)
     await room.connect(peer_id, websocket, {"display_name": display_name, "role": role})
 
+    print(f"[MINUTA] Participant connected to room {public_id}: {peer_id} ({display_name})", flush=True)
+
     await websocket.send_json({"type": "welcome", "peer_id": peer_id, "roster": room.roster()})
     await room.broadcast(
         {
@@ -222,6 +224,7 @@ async def meeting_ws(websocket: WebSocket, public_id: str):
     except WebSocketDisconnect:
         pass
     finally:
+        print(f"[MINUTA] Participant left room {public_id}: {peer_id}", flush=True)
         room.disconnect(peer_id)
         await room.broadcast(
             {"type": "peer_left", "peer_id": peer_id, "roster": room.roster()}

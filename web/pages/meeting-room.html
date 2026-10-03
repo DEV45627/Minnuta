@@ -155,7 +155,11 @@
         tile.innerHTML = `<video autoplay playsinline ${muted ? "muted" : ""}></video><div class="tile-label"></div>`;
         document.getElementById("video-grid").appendChild(tile);
       }
-      tile.querySelector("video").srcObject = stream;
+      const videoEl = tile.querySelector("video");
+      videoEl.srcObject = stream;
+      videoEl.play().catch((err) => {
+        console.warn("[MINUTA] Video autoplay required user interaction:", err);
+      });
       tile.querySelector(".tile-label").textContent = label;
     }
 

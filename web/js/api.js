@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from "./config.js";
+
 const TOKEN_KEY = "minuta_token";
 const USER_KEY = "minuta_user";
 
@@ -39,10 +41,13 @@ export async function api(path, options = {}) {
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const baseUrl = getApiBaseUrl();
+  const fullUrl = path.startsWith("http") ? path : `${baseUrl}${path.startsWith("/") ? "" : "/"}${path}`;
+
   let res = null;
   let text = "";
   try {
-    res = await fetch(path, { ...options, headers });
+    res = await fetch(fullUrl, { ...options, headers });
     text = await res.text();
   } catch (err) {
     // Network offline or static host fallback
