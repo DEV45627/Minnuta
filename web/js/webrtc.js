@@ -37,17 +37,22 @@ export class MeshRoom {
   async ensurePc(peerId) {
     if (this.pcs.has(peerId)) return this.pcs.get(peerId);
 
+    console.log("[MINUTA TEST] RTCPeerConnection created for peer", peerId);
     logMinuta("Creating RTCPeerConnection", `for peer ${peerId}`);
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {
         pc.addTrack(track, this.localStream);
+        if (track.kind === "video") console.log("[MINUTA TEST] Local video track added");
+        if (track.kind === "audio") console.log("[MINUTA TEST] Local audio track added");
       });
     }
 
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
+        console.log("[MINUTA TEST] ICE candidate generated", ev.candidate.candidate);
+        console.log("[MINUTA TEST] ICE candidate sent to", peerId);
         logMinuta("Sending ICE candidate", `to ${peerId}: ${ev.candidate.candidate.slice(0, 40)}...`);
         this.signaling.send({
           type: "ice_candidate",
@@ -58,12 +63,15 @@ export class MeshRoom {
     };
 
     pc.ontrack = (ev) => {
+      if (ev.track.kind === "video") console.log("[MINUTA TEST] REMOTE VIDEO TRACK RECEIVED from", peerId);
+      if (ev.track.kind === "audio") console.log("[MINUTA TEST] REMOTE AUDIO TRACK RECEIVED from", peerId);
       logMinuta("Remote track received", `kind=${ev.track.kind} from ${peerId}`);
       const remoteStream = ev.streams[0] || new MediaStream([ev.track]);
       this.onRemoteStream?.(peerId, remoteStream);
     };
 
     pc.onconnectionstatechange = () => {
+      console.log(`[MINUTA TEST] Peer connection state ${peerId}: ${pc.connectionState}`);
       logMinuta("Peer connection state", `${peerId}: ${pc.connectionState}`);
       this._setState(peerId, { connection: pc.connectionState });
       if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
@@ -76,9 +84,31 @@ export class MeshRoom {
     };
 
     pc.oniceconnectionstatechange = () => {
+      console.log(`[MINUTA TEST] ICE connection state ${peerId}: ${pc.iceConnectionState}`);
       logMinuta("ICE connection state", `${peerId}: ${pc.iceConnectionState}`);
       this._setState(peerId, { ice: pc.iceConnectionState });
     };
+
+    // Stats monitor
+    const statsInterval = setInterval(async () => {
+      if (pc.connectionState === "closed" || !this.pcs.has(peerId)) {
+        clearInterval(statsInterval);
+        return;
+      }
+      try {
+        const stats = await pc.getStats();
+        let inVideo = 0, inAudio = 0;
+        stats.forEach((report) => {
+          if (report.type === "inbound-rtp") {
+            if (report.kind === "video") inVideo = report.bytesReceived || 0;
+            if (report.kind === "audio") inAudio = report.bytesReceived || 0;
+          }
+        });
+        if (inVideo > 0 || inAudio > 0) {
+          console.log(`[MINUTA TEST] RTCStats for ${peerId}: inbound-rtp video bytesReceived: ${inVideo}, audio bytesReceived: ${inAudio}`);
+        }
+      } catch (_) {}
+    }, 5000);
 
     this.pcs.set(peerId, pc);
     this._setState(peerId, {
@@ -95,7 +125,9 @@ export class MeshRoom {
       const pc = await this.ensurePc(peerId);
       this.makingOffer.add(peerId);
       const offer = await pc.createOffer();
+      console.log("[MINUTA TEST] SDP offer created for", peerId);
       await pc.setLocalDescription(offer);
+      console.log("[MINUTA TEST] Offer sent to", peerId);
       this.signaling.send({
         type: "offer",
         to: peerId,
@@ -110,6 +142,8 @@ export class MeshRoom {
 
   async handleOffer(from, sdp) {
     try {
+      console.log("[MINUTA TEST] Offer received from", from);
+      console.log("[MINUTA TEST] SDP offer received from", from);
       logMinuta("Received offer", `from ${from}`);
       const pc = await this.ensurePc(from);
 
@@ -124,9 +158,12 @@ export class MeshRoom {
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log("[MINUTA TEST] Remote description set for offer from", from);
       logMinuta("Creating answer", `for ${from}`);
       const answer = await pc.createAnswer();
+      console.log("[MINUTA TEST] SDP answer created for", from);
       await pc.setLocalDescription(answer);
+      console.log("[MINUTA TEST] Answer sent to", from);
       this.signaling.send({
         type: "answer",
         to: from,
@@ -139,10 +176,13 @@ export class MeshRoom {
 
   async handleAnswer(from, sdp) {
     try {
+      console.log("[MINUTA TEST] Answer received from", from);
+      console.log("[MINUTA TEST] SDP answer received from", from);
       logMinuta("Received answer", `from ${from}`);
       const pc = this.pcs.get(from);
       if (!pc) return;
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      console.log("[MINUTA TEST] Remote description set for answer from", from);
     } catch (err) {
       console.error("[MINUTA] Handle answer error:", err);
     }
@@ -150,10 +190,12 @@ export class MeshRoom {
 
   async handleIce(from, candidate) {
     try {
+      console.log("[MINUTA TEST] ICE candidate received from", from);
       logMinuta("Received ICE candidate", `from ${from}`);
       const pc = await this.ensurePc(from);
       if (candidate) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log("[MINUTA TEST] ICE candidate added for", from);
       }
     } catch (err) {
       console.error("[MINUTA] Handle ICE error:", err);
@@ -243,6 +285,9 @@ export class SignalingClient {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
+            console.log("[MINUTA TEST] WebSocket connected");
+            console.log("[MINUTA TEST] Room ID:", this.publicId);
+            console.log("[MINUTA TEST] Participant ID:", this.peerId);
             logMinuta("Connected to signaling server", "WebSocket connection active");
             this.onState?.("open");
             resolve();
@@ -253,6 +298,7 @@ export class SignalingClient {
           try {
             const data = JSON.parse(ev.data);
             if (data.type === "peer_joined") {
+              console.log("[MINUTA TEST] Peer joined:", data.peer_id || data.display_name);
               logMinuta("Participant joined", `${data.display_name || data.peer_id}`);
             } else if (data.type === "peer_left") {
               logMinuta("Participant left", `${data.peer_id}`);

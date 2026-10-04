@@ -67,11 +67,20 @@
 
     async function setupPreview() {
       try {
+        console.log("[MINUTA TEST] getUserMedia started");
         localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-        camTrack = localStream.getVideoTracks()[0] || null;
+        const vTracks = localStream.getVideoTracks();
+        const aTracks = localStream.getAudioTracks();
+        if (vTracks.length > 0) console.log("[MINUTA TEST] Camera permission granted");
+        if (aTracks.length > 0) console.log("[MINUTA TEST] Microphone permission granted");
+        console.log("[MINUTA TEST] Video tracks:", vTracks.length);
+        console.log("[MINUTA TEST] Audio tracks:", aTracks.length);
+
+        camTrack = vTracks[0] || null;
         const preview = document.getElementById("preview");
         preview.srcObject = localStream;
       } catch (err) {
+        console.error("[MINUTA TEST] getUserMedia error:", err);
         document.getElementById("lobby-status").textContent =
           "Camera/microphone permission denied. You can still join with limited media.";
         toast("Media permission issue", "error");
@@ -154,34 +163,53 @@
         tile.id = `tile-${id}`;
         tile.innerHTML = `
           <video autoplay playsinline ${muted ? "muted" : ""}></video>
+          <audio autoplay playsinline ${muted ? "muted" : ""}></audio>
           <div class="tile-label"></div>
           <button class="unmute-btn btn btn-sm btn-primary" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.5)">
-            🔊 Tap to Play Media
+            🔊 Tap to Enable Audio & Video
           </button>
         `;
         document.getElementById("video-grid").appendChild(tile);
       }
       const videoEl = tile.querySelector("video");
+      const audioEl = tile.querySelector("audio");
       const btn = tile.querySelector(".unmute-btn");
+
       if (videoEl.srcObject !== stream) {
         videoEl.srcObject = stream;
+        console.log(`[MINUTA TEST] Remote video stream attached for ${id}`);
       }
+      if (audioEl && audioEl.srcObject !== stream) {
+        audioEl.srcObject = stream;
+        console.log(`[MINUTA TEST] Remote audio stream attached for ${id}`);
+      }
+
       const playPromise = videoEl.play();
       if (playPromise !== undefined) {
         playPromise.then(() => {
+          console.log(`[MINUTA TEST] Remote video play succeeded for ${id}`);
           if (btn) btn.style.display = "none";
         }).catch((err) => {
-          console.warn("[MINUTA] Video autoplay required user interaction:", err);
+          console.warn(`[MINUTA TEST] Remote video play failed for ${id}:`, err);
           if (btn && !muted) {
             btn.style.display = "block";
             btn.onclick = () => {
-              videoEl.play().then(() => {
-                btn.style.display = "none";
-              }).catch(e => console.error("[MINUTA] Play failed:", e));
+              videoEl.play().catch(e => console.error(e));
+              audioEl?.play().catch(e => console.error(e));
+              btn.style.display = "none";
             };
           }
         });
       }
+
+      if (audioEl && !muted) {
+        audioEl.play().then(() => {
+          console.log(`[MINUTA TEST] Remote audio play succeeded for ${id}`);
+        }).catch((err) => {
+          console.warn(`[MINUTA TEST] Remote audio play failed for ${id}:`, err);
+        });
+      }
+
       tile.querySelector(".tile-label").textContent = label;
     }
 
