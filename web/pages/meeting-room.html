@@ -152,14 +152,36 @@
         tile = document.createElement("div");
         tile.className = "tile";
         tile.id = `tile-${id}`;
-        tile.innerHTML = `<video autoplay playsinline ${muted ? "muted" : ""}></video><div class="tile-label"></div>`;
+        tile.innerHTML = `
+          <video autoplay playsinline ${muted ? "muted" : ""}></video>
+          <div class="tile-label"></div>
+          <button class="unmute-btn btn btn-sm btn-primary" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10;box-shadow:0 4px 12px rgba(0,0,0,0.5)">
+            🔊 Tap to Play Media
+          </button>
+        `;
         document.getElementById("video-grid").appendChild(tile);
       }
       const videoEl = tile.querySelector("video");
-      videoEl.srcObject = stream;
-      videoEl.play().catch((err) => {
-        console.warn("[MINUTA] Video autoplay required user interaction:", err);
-      });
+      const btn = tile.querySelector(".unmute-btn");
+      if (videoEl.srcObject !== stream) {
+        videoEl.srcObject = stream;
+      }
+      const playPromise = videoEl.play();
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          if (btn) btn.style.display = "none";
+        }).catch((err) => {
+          console.warn("[MINUTA] Video autoplay required user interaction:", err);
+          if (btn && !muted) {
+            btn.style.display = "block";
+            btn.onclick = () => {
+              videoEl.play().then(() => {
+                btn.style.display = "none";
+              }).catch(e => console.error("[MINUTA] Play failed:", e));
+            };
+          }
+        });
+      }
       tile.querySelector(".tile-label").textContent = label;
     }
 
@@ -456,6 +478,7 @@
             screenTrack = null;
             if (camTrack) {
               if (mesh) mesh.replaceVideoTrack(camTrack);
+              if (signaling?.replaceVideoTrack) signaling.replaceVideoTrack(camTrack);
             }
             toast("Screen share stopped", "ok");
             return;
@@ -463,9 +486,13 @@
           const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
           screenTrack = screen.getVideoTracks()[0];
           if (mesh) mesh.replaceVideoTrack(screenTrack);
+          if (signaling?.replaceVideoTrack) signaling.replaceVideoTrack(screenTrack);
           screenTrack.onended = () => {
             screenTrack = null;
-            if (camTrack && mesh) mesh.replaceVideoTrack(camTrack);
+            if (camTrack) {
+              if (mesh) mesh.replaceVideoTrack(camTrack);
+              if (signaling?.replaceVideoTrack) signaling.replaceVideoTrack(camTrack);
+            }
           };
           toast("Sharing screen", "ok");
         } catch (err) {

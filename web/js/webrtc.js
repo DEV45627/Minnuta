@@ -373,6 +373,21 @@ export class SignalingClient {
           username: "e8dd65b092860a7b0ac2f090",
           credential: "5ujhNPGlR4+L1RaK",
         },
+        {
+          urls: "turn:openrelay.metered.ca:80",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
+        {
+          urls: "turn:openrelay.metered.ca:443?transport=tcp",
+          username: "openrelayproject",
+          credential: "openrelayproject",
+        },
       ];
 
       const peer = new window.Peer(id, { config: { iceServers } });
@@ -460,23 +475,26 @@ export class SignalingClient {
       this.peerJsCalls.delete(remoteId);
       this.activeStreams.delete(remoteId);
     });
+  }
 
-    setTimeout(() => {
-      if (!this.activeStreams.has(remoteId)) {
-        this.peerJsCalls.delete(remoteId);
-        try { call.close(); } catch (_) {}
+  replaceVideoTrack(track) {
+    for (const call of this.peerJsCalls.values()) {
+      if (call && call.peerConnection) {
+        const sender = call.peerConnection.getSenders().find((s) => s.track && s.track.kind === "video");
+        if (sender) sender.replaceTrack(track);
       }
-    }, 8000);
+    }
   }
 
   _startSlotScanner() {
     if (this.slotTimer) clearInterval(this.slotTimer);
 
     const scan = () => {
-      if (!this.peerjs || this.peerjs.destroyed) return;
+      if (!this.peerjs || this.peerjs.destroyed || this.slotIndex < 0) return;
 
       for (let s = 0; s < 8; s++) {
-        if (s === this.slotIndex) continue;
+        // Lower slot index initiates call to higher slot index to prevent glare / double calls
+        if (s <= this.slotIndex) continue;
         const targetId = `minuta_${this.publicId}_slot${s}`;
         if (this.activeStreams.has(targetId)) continue;
 
@@ -492,7 +510,7 @@ export class SignalingClient {
     };
 
     scan();
-    this.slotTimer = setInterval(scan, 3000);
+    this.slotTimer = setInterval(scan, 4000);
   }
 
   _callSlot(targetId) {
