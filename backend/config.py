@@ -33,6 +33,20 @@ def detect_lan_ip() -> str:
     return "127.0.0.1"
 
 
+import os
+import tempfile
+
+def _default_db_url() -> str:
+    if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+        tmp_db = Path(tempfile.gettempdir()) / "minuta.db"
+        return f"sqlite:///{tmp_db.as_posix()}"
+    return f"sqlite:///{(ROOT / 'minuta.db').as_posix()}"
+
+def _default_storage_path() -> str:
+    if os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV"):
+        return str(Path(tempfile.gettempdir()) / "storage")
+    return str(ROOT / "storage")
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(ROOT / ".env"),
@@ -64,14 +78,15 @@ class Settings(BaseSettings):
     # Optional JSON override for full iceServers list (advanced). Keep secrets in env only.
     ice_servers_json: str | None = None
 
-    database_url: str = f"sqlite:///{(ROOT / 'minuta.db').as_posix()}"
-    storage_path: str = str(ROOT / "storage")
+    database_url: str = _default_db_url()
+    storage_path: str = _default_storage_path()
     whisper_model: str = "tiny"
     ai_provider: str = "demo"
     openai_api_key: str | None = None
     max_upload_mb: int = 50
     algorithm: str = "HS256"
     rate_limit_per_minute: int = 120
+
 
     @property
     def is_production(self) -> bool:
