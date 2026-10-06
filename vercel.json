@@ -2,16 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
     "app": {
-      "root": ".",
-      "outputDirectory": "web",
-      "bindings": [
-        {
-          "type": "service",
-          "service": "backend",
-          "format": "url",
-          "env": "MINUTA_API_URL"
-        }
-      ]
+      "root": "web",
+      "framework": null
     },
     "backend": {
       "root": "backend",
