@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+_file_dir = Path(__file__).resolve().parent
+_parent_dir = _file_dir.parent
+
+for _d in (str(_file_dir), str(_parent_dir)):
+    if _d not in sys.path:
+        sys.path.insert(0, _d)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -87,3 +96,7 @@ def create_app() -> FastAPI:
     web = ROOT / "web"
     app.mount("/static", StaticFiles(directory=web), name="static")
     return app
+
+
+# Expose default FastAPI application instance for Vercel deployment
+app = create_app()
