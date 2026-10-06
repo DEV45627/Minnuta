@@ -47,7 +47,10 @@
       root.innerHTML = `
         <div class="ambient"></div>
         <div class="lobby-wrap card">
-          <p class="muted">You're about to join</p>
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <p class="muted" style="margin:0">You're about to join</p>
+            <span style="background:#00e599;color:#000;padding:3px 8px;border-radius:4px;font-size:0.75rem;font-weight:700">MINUTA BUILD: WEBRTC-FIX-2026-10-06</span>
+          </div>
           <h1 style="font-family:var(--font-display);margin:0.2rem 0 1rem">${meeting.title}</h1>
           <div class="preview-box"><video id="preview" autoplay muted playsinline></video></div>
           <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
@@ -103,9 +106,10 @@
       root.innerHTML = `
         <div class="room-shell">
           <div class="room-top">
-            <div>
+            <div style="display:flex;align-items:center">
               <strong>${meeting.title}</strong>
               <span class="muted" style="margin-left:0.5rem">${publicId}</span>
+              <span style="background:#00e599;color:#000;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:700;margin-left:0.75rem">MINUTA BUILD: WEBRTC-FIX-2026-10-06</span>
             </div>
             <div class="rec-pill" id="rec-pill">Recording</div>
           </div>
