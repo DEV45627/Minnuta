@@ -251,10 +251,25 @@ export class SignalingClient {
     this.peerJsConns = new Map();
     this.peerJsCalls = new Map();
     this.activeStreams = new Set();
+    this.discoveredPeers = new Map();
     this.slotIndex = -1;
     this.slotTimer = null;
 
+    console.log(`[MINUTA DEBUG] Meeting ID: ${publicId}`);
+    console.log(`[MINUTA DEBUG] Peer ID: ${peerId}`);
     logMinuta("Joining room", `Room: ${publicId} | Peer: ${peerId} | User: ${displayName}`);
+  }
+
+  _registerDiscoveredPeer(id, displayName) {
+    if (!id || id === this.peerId || id === this.peerJsId) return;
+    if (!this.discoveredPeers.has(id)) {
+      console.log(`[MINUTA DEBUG] Remote peer discovered: ${id} (${displayName || "Participant"})`);
+    }
+    this.discoveredPeers.set(id, {
+      peer_id: id,
+      display_name: displayName || this.discoveredPeers.get(id)?.display_name || "Participant",
+      role: "participant",
+    });
   }
 
   connect() {
@@ -285,9 +300,11 @@ export class SignalingClient {
           if (!resolved) {
             resolved = true;
             clearTimeout(timeout);
-            console.log("[MINUTA TEST] WebSocket connected");
-            console.log("[MINUTA TEST] Room ID:", this.publicId);
-            console.log("[MINUTA TEST] Participant ID:", this.peerId);
+            console.log("[MINUTA DEBUG] WebSocket connected");
+            console.log(`[MINUTA DEBUG] Meeting ID: ${this.publicId}`);
+            console.log(`[MINUTA DEBUG] Peer ID: ${this.peerId}`);
+            console.log(`[MINUTA DEBUG] Signaling URL: ${url}`);
+            console.log("[MINUTA DEBUG] Signaling provider: FastAPI WebSocket");
             logMinuta("Connected to signaling server", "WebSocket connection active");
             this.onState?.("open");
             resolve();
@@ -298,9 +315,17 @@ export class SignalingClient {
           try {
             const data = JSON.parse(ev.data);
             if (data.type === "peer_joined") {
-              console.log("[MINUTA TEST] Peer joined:", data.peer_id || data.display_name);
+              console.log("[MINUTA DEBUG] Remote peer discovered:", data.peer_id || data.display_name);
+              this._registerDiscoveredPeer(data.peer_id, data.display_name);
               logMinuta("Participant joined", `${data.display_name || data.peer_id}`);
+            } else if (data.type === "welcome" && Array.isArray(data.roster)) {
+              for (const p of data.roster) {
+                if (p.peer_id !== this.peerId) {
+                  this._registerDiscoveredPeer(p.peer_id, p.display_name);
+                }
+              }
             } else if (data.type === "peer_left") {
+              this.discoveredPeers.delete(data.peer_id);
               logMinuta("Participant left", `${data.peer_id}`);
             }
             this.onMessage?.(data);
@@ -337,6 +362,9 @@ export class SignalingClient {
   _initFallback() {
     this.isFallback = true;
     this.onState?.("open");
+    console.log(`[MINUTA DEBUG] Meeting ID: ${this.publicId}`);
+    console.log(`[MINUTA DEBUG] Peer ID: ${this.peerId}`);
+    console.log("[MINUTA DEBUG] Signaling provider: PeerJS Cloud Relay");
     logMinuta("Connected to signaling server", "PeerJS Cloud Fallback Mode");
 
     // Local tab broadcast
@@ -444,10 +472,12 @@ export class SignalingClient {
         this.peerjs = peer;
         this.slotIndex = slot;
         this.peerJsId = openId;
+        console.log(`[MINUTA DEBUG] PeerJS registered at Slot ${slot}: ${openId}`);
         logMinuta("PeerJS registered", `Slot ${slot}: ${openId}`);
 
         peer.on("call", (call) => {
           logMinuta("Received incoming media call", `from ${call.peer}`);
+          this._registerDiscoveredPeer(call.peer, "Participant");
           const streamToSend = this.localStream || new MediaStream();
           call.answer(streamToSend);
           this._bindMediaCall(call.peer, call);
@@ -456,17 +486,22 @@ export class SignalingClient {
         peer.on("connection", (conn) => {
           conn.on("open", () => {
             logMinuta("Participant joined", `PeerJS data connection from ${conn.peer}`);
+            this._registerDiscoveredPeer(conn.peer, conn._displayName);
             this.peerJsConns.set(conn.peer, conn);
             try {
               conn.send({
                 type: "welcome",
                 roster: this._buildRoster(),
                 _sender: this.peerJsId,
+                display_name: this.displayName,
               });
             } catch (_) {}
           });
           conn.on("data", (data) => {
-            if (data && data._sender) this.peerJsConns.set(data._sender, conn);
+            if (data && data._sender) {
+              this._registerDiscoveredPeer(data._sender, data.display_name);
+              this.peerJsConns.set(data._sender, conn);
+            }
             if (data && data.display_name) conn._displayName = data.display_name;
             this._handleFallbackMsg(data);
           });
@@ -503,6 +538,7 @@ export class SignalingClient {
 
   _bindMediaCall(remoteId, call) {
     this.peerJsCalls.set(remoteId, call);
+    this._registerDiscoveredPeer(remoteId, "Participant");
 
     call.on("stream", (remoteStream) => {
       logMinuta("Remote track received", `via PeerJS from ${remoteId} (tracks: ${remoteStream.getTracks().length})`);
@@ -539,24 +575,24 @@ export class SignalingClient {
       if (!this.peerjs || this.peerjs.destroyed || this.slotIndex < 0) return;
 
       for (let s = 0; s < 8; s++) {
-        // Lower slot index initiates call to higher slot index to prevent glare / double calls
-        if (s <= this.slotIndex) continue;
+        if (s === this.slotIndex) continue;
         const targetId = `minuta_${this.publicId}_slot${s}`;
-        if (this.activeStreams.has(targetId)) continue;
 
+        // Probe data channels for ALL slots so peers discover each other bidirectionally
         const existingConn = this.peerJsConns.get(targetId);
         if (!existingConn || !existingConn.open) {
           this._connectDataChannel(targetId);
         }
 
-        if (!this.peerJsCalls.has(targetId)) {
+        // Only lower slot index initiates media call to higher slot index to prevent media glare
+        if (s > this.slotIndex && !this.activeStreams.has(targetId) && !this.peerJsCalls.has(targetId)) {
           this._callSlot(targetId);
         }
       }
     };
 
     scan();
-    this.slotTimer = setInterval(scan, 4000);
+    this.slotTimer = setInterval(scan, 3000);
   }
 
   _callSlot(targetId) {
@@ -588,6 +624,7 @@ export class SignalingClient {
 
       conn.on("open", () => {
         this.peerJsConns.set(targetId, conn);
+        this._registerDiscoveredPeer(targetId, conn._displayName);
         if (conn._pending) {
           for (const m of conn._pending) {
             try { conn.send(m); } catch (_) {}
@@ -596,8 +633,11 @@ export class SignalingClient {
         }
       });
       conn.on("data", (data) => {
+        if (data && data._sender) {
+          this._registerDiscoveredPeer(data._sender, data.display_name);
+          this.peerJsConns.set(data._sender, conn);
+        }
         if (data && data.display_name) conn._displayName = data.display_name;
-        if (data && data._sender) this.peerJsConns.set(data._sender, conn);
         this._handleFallbackMsg(data);
       });
       conn.on("close", () => this.peerJsConns.delete(targetId));
@@ -614,12 +654,24 @@ export class SignalingClient {
 
   _buildRoster() {
     const list = [];
-    for (const [id, conn] of this.peerJsConns.entries()) {
-      if (conn.open) {
-        list.push({ peer_id: id, display_name: conn._displayName || "Participant", role: "participant" });
+    const seen = new Set();
+
+    const myId = this.peerJsId || this.peerId;
+    list.push({ peer_id: myId, display_name: this.displayName + " (You)", role: this.role });
+    seen.add(myId);
+
+    for (const [id, peerObj] of this.discoveredPeers.entries()) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        list.push(peerObj);
       }
     }
-    list.push({ peer_id: this.peerJsId || this.peerId, display_name: this.displayName, role: this.role });
+    for (const [id, conn] of this.peerJsConns.entries()) {
+      if (conn.open && !seen.has(id)) {
+        seen.add(id);
+        list.push({ peer_id: id, display_name: conn._displayName || id, role: "participant" });
+      }
+    }
     return list;
   }
 
@@ -629,7 +681,17 @@ export class SignalingClient {
     if (sender === this.peerId || sender === this.peerJsId) return;
     if (msg.to && msg.to !== this.peerId && msg.to !== this.peerJsId) return;
 
+    if (sender) {
+      this._registerDiscoveredPeer(sender, msg.display_name);
+    }
     if (msg.type === "peer_joined" || msg.type === "welcome") {
+      if (Array.isArray(msg.roster)) {
+        for (const p of msg.roster) {
+          if (p.peer_id !== this.peerId && p.peer_id !== this.peerJsId) {
+            this._registerDiscoveredPeer(p.peer_id, p.display_name);
+          }
+        }
+      }
       msg.roster = this._buildRoster();
     }
     this.onMessage?.(msg);

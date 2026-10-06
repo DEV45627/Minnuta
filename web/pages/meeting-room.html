@@ -113,6 +113,21 @@
             </div>
             <div class="rec-pill" id="rec-pill">Recording</div>
           </div>
+          
+          <!-- Temporary Participant Discovery Debug Panel -->
+          <div id="minuta-debug-panel" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:0.75rem 1rem;margin:0.75rem;font-family:monospace;font-size:0.82rem;color:#f8fafc;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem">
+              <div><span style="color:#94a3b8">MEETING:</span> <strong id="dbg-meeting">${publicId}</strong></div>
+              <div><span style="color:#94a3b8">MY PEER:</span> <strong id="dbg-peer">${peerId.slice(0, 8)}…</strong></div>
+              <div><span style="color:#94a3b8">SIGNALING:</span> <strong id="dbg-state">CONNECTING</strong></div>
+              <div><span style="color:#94a3b8">PROVIDER:</span> <strong id="dbg-provider">Initializing...</strong></div>
+              <div><span style="color:#94a3b8">REMOTE PEERS:</span> <strong id="dbg-count" style="color:#ef4444;font-size:1.05rem">0</strong></div>
+            </div>
+            <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid #1e293b;color:#cbd5e1">
+              <span>REMOTE PEER IDS:</span> <strong id="dbg-ids" style="color:#38bdf8">None</strong>
+            </div>
+          </div>
+
           <div class="invite-bar" id="invite-bar">
             <span class="invite-label">Invite participants — share this link so guests join the same room</span>
             <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
@@ -404,27 +419,31 @@
           if (side === "diag") renderSide();
         },
         onMessage: async (msg) => {
+          if (signaling._buildRoster) {
+            roster = signaling._buildRoster();
+          }
           if (msg.type === "welcome") {
-            roster = msg.roster || [];
-            // In PeerJS fallback mode, media is handled by peer.call() / peer.on("call")
-            // Only call mesh.call() if we have a live WebSocket (non-fallback)
+            roster = msg.roster || roster;
             if (mesh && !signaling.isFallback) {
               for (const p of roster) {
                 if (p.peer_id !== peerId) await mesh.call(p.peer_id);
               }
             }
             renderSide();
+            updateDebugPanel();
           } else if (msg.type === "peer_joined") {
             roster = msg.roster || roster;
             if (mesh && !signaling.isFallback && msg.peer_id !== peerId) {
               await mesh.call(msg.peer_id);
             }
             renderSide();
+            updateDebugPanel();
           } else if (msg.type === "peer_left") {
             roster = msg.roster || roster;
             if (mesh) mesh.closePeer(msg.peer_id);
             removeTile(msg.peer_id);
             renderSide();
+            updateDebugPanel();
           } else if (msg.type === "offer" && mesh) {
             await mesh.handleOffer(msg._sender || msg.from, msg.sdp);
           } else if (msg.type === "answer" && mesh) {
@@ -448,7 +467,39 @@
         },
       });
 
+      function updateDebugPanel() {
+        if (!signaling) return;
+        const currentRoster = signaling._buildRoster ? signaling._buildRoster() : roster;
+        const myId = signaling.peerJsId || peerId;
+        const remotes = currentRoster.filter(p => p.peer_id !== myId && p.peer_id !== peerId);
+
+        const dbgState = document.getElementById("dbg-state");
+        const dbgProvider = document.getElementById("dbg-provider");
+        const dbgCount = document.getElementById("dbg-count");
+        const dbgIds = document.getElementById("dbg-ids");
+
+        if (dbgState) dbgState.textContent = wsState.toUpperCase();
+        if (dbgProvider) dbgProvider.textContent = signaling.isFallback ? `PeerJS Relay (Slot ${signaling.slotIndex >= 0 ? signaling.slotIndex : "..."})` : "FastAPI WebSocket";
+        if (dbgCount) {
+          dbgCount.textContent = remotes.length;
+          dbgCount.style.color = remotes.length > 0 ? "#10b981" : "#ef4444";
+        }
+        if (dbgIds) {
+          dbgIds.textContent = remotes.map(p => p.display_name || p.peer_id).join(", ") || "None";
+        }
+      }
+
       await signaling.connect();
+      updateDebugPanel();
+
+      // Poll roster & debug panel every 1.5s to ensure instant participant discovery UI updates
+      const debugTimer = setInterval(() => {
+        if (signaling._buildRoster) {
+          roster = signaling._buildRoster();
+          renderSide();
+          updateDebugPanel();
+        }
+      }, 1500);
 
       // Only create MeshRoom for WebSocket-based signaling (not PeerJS fallback)
       // In fallback mode, PeerJS peer.call() / peer.on("call") handles all media
