@@ -3,7 +3,15 @@
   "services": {
     "app": {
       "root": "web",
-      "framework": null
+      "framework": "static",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "backend",
+          "format": "url",
+          "env": "MINUTA_API_URL"
+        }
+      ]
     },
     "backend": {
       "root": "backend",
