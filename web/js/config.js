@@ -35,6 +35,9 @@ export function getSignalingWsUrl(publicId, params = {}) {
   if (!baseUrl) {
     baseUrl = localStorage.getItem("minuta_signaling_url");
   }
+  if (!baseUrl && window.MINUTA_API_URL) {
+    baseUrl = window.MINUTA_API_URL;
+  }
 
   const qs = new URLSearchParams(params).toString();
   const queryStr = qs ? `?${qs}` : "";
@@ -49,4 +52,3 @@ export function getSignalingWsUrl(publicId, params = {}) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}/ws/meetings/${publicId}${queryStr}`;
 }
-

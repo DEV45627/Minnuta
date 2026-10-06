@@ -1,12 +1,36 @@
 {
-  "version": 2,
-  "name": "minuta-web",
-  "framework": null,
-  "buildCommand": "echo 'Static build complete'",
-  "outputDirectory": "web",
-  "cleanUrls": false,
-  "trailingSlash": false,
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "app": {
+      "root": ".",
+      "outputDirectory": "web",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "backend",
+          "format": "url",
+          "env": "MINUTA_API_URL"
+        }
+      ]
+    },
+    "backend": {
+      "root": "backend",
+      "framework": "fastapi"
+    }
+  },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/ws/(.*)",
+      "destination": {
+        "service": "backend"
+      }
+    },
     {
       "source": "/static/css/:path*",
       "destination": "/css/:path*"
@@ -82,6 +106,12 @@
     {
       "source": "/demo",
       "destination": "/pages/demo.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "service": "app"
+      }
     }
   ],
   "headers": [
