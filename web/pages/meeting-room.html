@@ -114,17 +114,26 @@
             <div class="rec-pill" id="rec-pill">Recording</div>
           </div>
           
-          <!-- Temporary Participant Discovery Debug Panel -->
+          <!-- Participant Discovery Debug Panel -->
           <div id="minuta-debug-panel" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:0.75rem 1rem;margin:0.75rem;font-family:monospace;font-size:0.82rem;color:#f8fafc;box-shadow:0 4px 12px rgba(0,0,0,0.3)">
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:0.5rem">
               <div><span style="color:#94a3b8">MEETING:</span> <strong id="dbg-meeting">${publicId}</strong></div>
               <div><span style="color:#94a3b8">MY PEER:</span> <strong id="dbg-peer">${peerId.slice(0, 8)}…</strong></div>
-              <div><span style="color:#94a3b8">SIGNALING:</span> <strong id="dbg-state">CONNECTING</strong></div>
-              <div><span style="color:#94a3b8">PROVIDER:</span> <strong id="dbg-provider">Initializing...</strong></div>
+              <div><span style="color:#94a3b8">SIGNALING:</span> <strong id="dbg-state" style="font-weight:700">CONNECTING</strong></div>
+              <div><span style="color:#94a3b8">PROVIDER:</span> <strong id="dbg-provider">FastAPI WebSocket</strong></div>
               <div><span style="color:#94a3b8">REMOTE PEERS:</span> <strong id="dbg-count" style="color:#ef4444;font-size:1.05rem">0</strong></div>
+            </div>
+            <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid #1e293b;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.4rem;color:#cbd5e1">
+              <div><span style="color:#94a3b8">WEBSOCKET URL:</span> <span id="dbg-wsurl" style="color:#38bdf8;word-break:break-all">Initializing...</span></div>
+              <div><span style="color:#94a3b8">CLOSE CODE:</span> <strong id="dbg-code" style="color:#f59e0b">N/A</strong></div>
+              <div><span style="color:#94a3b8">CLOSE REASON:</span> <span id="dbg-reason" style="color:#94a3b8">N/A</span></div>
             </div>
             <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid #1e293b;color:#cbd5e1">
               <span>REMOTE PEER IDS:</span> <strong id="dbg-ids" style="color:#38bdf8">None</strong>
+            </div>
+            <div id="dbg-alert" style="display:none;margin-top:0.5rem;padding:0.5rem 0.75rem;background:#450a0a;border:1px solid #991b1b;border-radius:6px;color:#fca5a5;font-size:0.78rem">
+              <strong>⚠️ FASTAPI BACKEND UNREACHABLE / NOT DEPLOYED ON THIS HOST</strong><br />
+              Vercel is a static host and does not run persistent Python WebSockets. Specify your deployed FastAPI server URL via <code>?signaling_url=wss://your-backend.com</code> or <code>MINUTA_SIGNALING_URL</code>.
             </div>
           </div>
 
@@ -257,14 +266,18 @@
       const media = mediaFlags();
       const remotes = mesh?.diagnostics?.() || [...peerDiag.entries()].map(([peerId, state]) => ({ peerId, ...state }));
       const activeMediaStreams = mesh ? mesh.pcs.size : 0;
-      const sigLabel = signaling?.readyStateLabel?.() || wsState;
+      const sigLabel = signaling?.readyStateLabel?.() || wsState.toUpperCase();
       const remotePeersCount = roster.filter(p => p.peer_id !== peerId).length;
 
       return `
         <div class="diag-panel">
           <div class="diag-row"><span>Server URL</span><strong>${location.origin}</strong></div>
           <div class="diag-row"><span>Meeting ID</span><strong>${publicId}</strong></div>
-          <div class="diag-row"><span>Signaling</span><strong>${sigLabel}</strong></div>
+          <div class="diag-row"><span>Signaling State</span><strong>${sigLabel}</strong></div>
+          <div class="diag-row"><span>WebSocket URL</span><strong style="word-break:break-all">${signaling?.wsUrl || "Not connected"}</strong></div>
+          <div class="diag-row"><span>Close Code</span><strong>${signaling?.closeCode !== null && signaling?.closeCode !== undefined ? signaling.closeCode : "—"}</strong></div>
+          <div class="diag-row"><span>Close Reason</span><strong>${signaling?.closeReason || "—"}</strong></div>
+          <div class="diag-row"><span>Last Error</span><strong>${signaling?.lastError || "None"}</strong></div>
           <div class="diag-row"><span>Provider</span><strong>FastAPI WebSocket</strong></div>
           <div class="diag-row"><span>Active Media Streams</span><strong>${activeMediaStreams}</strong></div>
           <div class="diag-row"><span>Local microphone</span><strong>${media.mic === "YES" ? "YES (Active)" : media.mic === "Muted" ? "Muted" : "Missing"}</strong></div>
@@ -474,13 +487,21 @@
       function updateDebugPanel() {
         if (!signaling) return;
         const remotes = roster.filter(p => p.peer_id !== peerId);
+        const label = signaling.readyStateLabel ? signaling.readyStateLabel() : wsState.toUpperCase();
 
         const dbgState = document.getElementById("dbg-state");
         const dbgProvider = document.getElementById("dbg-provider");
         const dbgCount = document.getElementById("dbg-count");
         const dbgIds = document.getElementById("dbg-ids");
+        const dbgWsUrl = document.getElementById("dbg-wsurl");
+        const dbgCode = document.getElementById("dbg-code");
+        const dbgReason = document.getElementById("dbg-reason");
+        const dbgAlert = document.getElementById("dbg-alert");
 
-        if (dbgState) dbgState.textContent = wsState.toUpperCase();
+        if (dbgState) {
+          dbgState.textContent = label;
+          dbgState.style.color = label === "CONNECTED" ? "#10b981" : label === "CONNECTING" ? "#f59e0b" : "#ef4444";
+        }
         if (dbgProvider) dbgProvider.textContent = "FastAPI WebSocket";
         if (dbgCount) {
           dbgCount.textContent = remotes.length;
@@ -488,6 +509,13 @@
         }
         if (dbgIds) {
           dbgIds.textContent = remotes.map(p => `${p.display_name} (${p.peer_id.slice(0, 8)})`).join(", ") || "None";
+        }
+        if (dbgWsUrl) dbgWsUrl.textContent = signaling.wsUrl || "Initializing...";
+        if (dbgCode) dbgCode.textContent = signaling.closeCode !== null && signaling.closeCode !== undefined ? signaling.closeCode : "N/A";
+        if (dbgReason) dbgReason.textContent = signaling.closeReason || "N/A";
+        if (dbgAlert) {
+          const isClosed = label === "CLOSED" || label === "ERROR" || signaling.closeCode === 1006;
+          dbgAlert.style.display = isClosed ? "block" : "none";
         }
       }
 
@@ -517,6 +545,7 @@
         renderSide();
         updateDebugPanel();
       }, 1500);
+
 
 
       renderSide();

@@ -4,6 +4,12 @@
  */
 
 export function getApiBaseUrl() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const paramUrl = urlParams.get("api_url");
+    if (paramUrl) return paramUrl.replace(/\/$/, "");
+  } catch (_) {}
+
   if (window.MINUTA_API_URL) return window.MINUTA_API_URL.replace(/\/$/, "");
   const meta = document.querySelector('meta[name="minuta-api-url"]');
   if (meta && meta.content) return meta.content.replace(/\/$/, "");
@@ -13,31 +19,34 @@ export function getApiBaseUrl() {
 }
 
 export function getSignalingWsUrl(publicId, params = {}) {
-  if (window.MINUTA_SIGNALING_URL) {
-    const baseUrl = window.MINUTA_SIGNALING_URL.replace(/\/$/, "");
-    const wsProto = baseUrl.startsWith("https") ? "wss" : baseUrl.startsWith("http") ? "ws" : "wss";
-    const cleanHost = baseUrl.replace(/^https?:\/\//, "").replace(/^wss?:\/\//, "");
-    const qs = new URLSearchParams(params).toString();
-    return `${wsProto}://${cleanHost}/ws/meetings/${publicId}?${qs}`;
+  let baseUrl = null;
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    baseUrl = urlParams.get("signaling_url");
+  } catch (_) {}
+
+  if (!baseUrl && window.MINUTA_SIGNALING_URL) {
+    baseUrl = window.MINUTA_SIGNALING_URL;
   }
-  const meta = document.querySelector('meta[name="minuta-signaling-url"]');
-  if (meta && meta.content) {
-    const baseUrl = meta.content.replace(/\/$/, "");
-    const wsProto = baseUrl.startsWith("https") ? "wss" : baseUrl.startsWith("http") ? "ws" : "wss";
-    const cleanHost = baseUrl.replace(/^https?:\/\//, "").replace(/^wss?:\/\//, "");
-    const qs = new URLSearchParams(params).toString();
-    return `${wsProto}://${cleanHost}/ws/meetings/${publicId}?${qs}`;
+  if (!baseUrl) {
+    const meta = document.querySelector('meta[name="minuta-signaling-url"]');
+    if (meta && meta.content) baseUrl = meta.content;
   }
-  const localOverride = localStorage.getItem("minuta_signaling_url");
-  if (localOverride) {
-    const baseUrl = localOverride.replace(/\/$/, "");
-    const wsProto = baseUrl.startsWith("https") ? "wss" : baseUrl.startsWith("http") ? "ws" : "wss";
-    const cleanHost = baseUrl.replace(/^https?:\/\//, "").replace(/^wss?:\/\//, "");
-    const qs = new URLSearchParams(params).toString();
-    return `${wsProto}://${cleanHost}/ws/meetings/${publicId}?${qs}`;
+  if (!baseUrl) {
+    baseUrl = localStorage.getItem("minuta_signaling_url");
+  }
+
+  const qs = new URLSearchParams(params).toString();
+  const queryStr = qs ? `?${qs}` : "";
+
+  if (baseUrl) {
+    const cleanUrl = baseUrl.replace(/\/$/, "");
+    const wsProto = cleanUrl.startsWith("https") ? "wss" : cleanUrl.startsWith("http") ? "ws" : cleanUrl.startsWith("wss") ? "wss" : "ws";
+    const cleanHost = cleanUrl.replace(/^https?:\/\//, "").replace(/^wss?:\/\//, "");
+    return `${wsProto}://${cleanHost}/ws/meetings/${publicId}${queryStr}`;
   }
 
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const qs = new URLSearchParams(params).toString();
-  return `${proto}://${location.host}/ws/meetings/${publicId}?${qs}`;
+  return `${proto}://${location.host}/ws/meetings/${publicId}${queryStr}`;
 }
+

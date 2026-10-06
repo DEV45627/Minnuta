@@ -240,6 +240,10 @@ export class SignalingClient {
     this.roster = [];
     this.reconnectTimer = null;
     this.closedExplicitly = false;
+    this.wsUrl = "";
+    this.closeCode = null;
+    this.closeReason = "";
+    this.lastError = "";
 
     console.log(`[MINUTA RTC] MEETING ID: ${publicId}`);
     console.log(`[MINUTA RTC] MY PARTICIPANT ID: ${peerId}`);
@@ -254,19 +258,22 @@ export class SignalingClient {
       display_name: this.displayName,
       role: this.role,
     };
-    const url = getSignalingWsUrl(this.publicId, params);
+    this.wsUrl = getSignalingWsUrl(this.publicId, params);
 
     return new Promise((resolve) => {
       let resolved = false;
 
       try {
-        logMinuta("Connecting to signaling server", url);
-        console.log(`[MINUTA RTC] Connecting to WebSocket: ${url}`);
-        this.ws = new WebSocket(url);
+        logMinuta("Connecting to signaling server", this.wsUrl);
+        console.log(`[MINUTA RTC] Connecting to WebSocket: ${this.wsUrl}`);
+        this.ws = new WebSocket(this.wsUrl);
 
         this.ws.onopen = () => {
           if (!resolved) {
             resolved = true;
+            this.closeCode = null;
+            this.closeReason = "";
+            this.lastError = "";
             console.log("[MINUTA RTC] WebSocket connected to FastAPI signaling server");
             console.log(`[MINUTA RTC] MEETING ID: ${this.publicId}`);
             console.log(`[MINUTA RTC] MY PARTICIPANT ID: ${this.peerId}`);
@@ -297,6 +304,7 @@ export class SignalingClient {
 
         this.ws.onerror = (err) => {
           console.error("[MINUTA RTC] WebSocket error:", err);
+          this.lastError = err?.message || "WebSocket Connection Failed (Target unreachable or not running)";
           if (!resolved) {
             resolved = true;
             this.onState?.("error");
@@ -304,16 +312,19 @@ export class SignalingClient {
           }
         };
 
-        this.ws.onclose = () => {
-          console.log("[MINUTA RTC] WebSocket closed");
+        this.ws.onclose = (ev) => {
+          this.closeCode = ev.code;
+          this.closeReason = ev.reason || (ev.code === 1006 ? "Abnormal Closure (FastAPI WebSocket server unreachable or missing)" : ev.code === 4404 ? "Meeting Room Not Found" : "Connection Closed");
+          console.log(`[MINUTA RTC] WebSocket closed. Code: ${ev.code}, Reason: ${this.closeReason}`);
           this.onState?.("closed");
           if (!this.closedExplicitly) {
-            console.log("[MINUTA RTC] Reconnecting in 3s...");
-            this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+            console.log("[MINUTA RTC] Reconnecting in 5s...");
+            this.reconnectTimer = setTimeout(() => this.connect(), 5000);
           }
         };
       } catch (err) {
         console.error("[MINUTA RTC] WebSocket init exception:", err);
+        this.lastError = err.message || "WebSocket initialization failed";
         if (!resolved) {
           resolved = true;
           this.onState?.("error");
@@ -332,8 +343,8 @@ export class SignalingClient {
   }
 
   readyStateLabel() {
-    if (!this.ws) return "none";
-    return ["connecting", "open", "closing", "closed"][this.ws.readyState] || "unknown";
+    if (!this.ws) return "NONE";
+    return ["CONNECTING", "CONNECTED", "CLOSING", "CLOSED"][this.ws.readyState] || "UNKNOWN";
   }
 
   close() {
