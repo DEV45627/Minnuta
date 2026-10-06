@@ -248,45 +248,38 @@
       const audio = localStream?.getAudioTracks()?.[0];
       const video = localStream?.getVideoTracks()?.[0];
       return {
-        mic: audio ? (audio.enabled ? "on" : "muted") : "missing",
-        cam: video ? (video.enabled ? "on" : "off") : "missing",
+        mic: audio ? (audio.enabled ? "YES" : "Muted") : "Missing",
+        cam: video ? (video.enabled ? "YES" : "Off") : "Missing",
       };
     }
 
     function renderDiagnostics() {
       const media = mediaFlags();
       const remotes = mesh?.diagnostics?.() || [...peerDiag.entries()].map(([peerId, state]) => ({ peerId, ...state }));
-      const anyRemote = remotes.some((r) => r.connection === "connected");
-      const anyIceOk = remotes.some((r) => r.ice === "connected" || r.ice === "completed");
-      const anyIceFail = remotes.some((r) => r.ice === "failed");
-      const peerJsStreams = signaling?.activeStreams?.size || 0;
-      const peerJsSlot = signaling?.slotIndex >= 0 ? signaling.slotIndex : "—";
-      const peerJsConns = signaling?.peerJsConns?.size || 0;
+      const activeMediaStreams = mesh ? mesh.pcs.size : 0;
       const sigLabel = signaling?.readyStateLabel?.() || wsState;
+      const remotePeersCount = roster.filter(p => p.peer_id !== peerId).length;
+
       return `
         <div class="diag-panel">
           <div class="diag-row"><span>Server URL</span><strong>${location.origin}</strong></div>
           <div class="diag-row"><span>Meeting ID</span><strong>${publicId}</strong></div>
           <div class="diag-row"><span>Signaling</span><strong>${sigLabel}</strong></div>
-          <div class="diag-row"><span>PeerJS Slot</span><strong>${peerJsSlot}</strong></div>
-          <div class="diag-row"><span>PeerJS Data Channels</span><strong>${peerJsConns}</strong></div>
-          <div class="diag-row"><span>Active Media Streams</span><strong>${peerJsStreams}</strong></div>
-          <div class="diag-row"><span>Local microphone</span><strong>${media.mic === "on" ? "Active" : media.mic === "muted" ? "Inactive" : "Missing"}</strong></div>
-          <div class="diag-row"><span>Local camera</span><strong>${media.cam === "on" ? "Active" : media.cam === "off" ? "Inactive" : "Missing"}</strong></div>
+          <div class="diag-row"><span>Provider</span><strong>FastAPI WebSocket</strong></div>
+          <div class="diag-row"><span>Active Media Streams</span><strong>${activeMediaStreams}</strong></div>
+          <div class="diag-row"><span>Local microphone</span><strong>${media.mic === "YES" ? "YES (Active)" : media.mic === "Muted" ? "Muted" : "Missing"}</strong></div>
+          <div class="diag-row"><span>Local camera</span><strong>${media.cam === "YES" ? "YES (Active)" : media.cam === "Off" ? "Off" : "Missing"}</strong></div>
           <div class="diag-row"><span>Roster size</span><strong>${roster.length}</strong></div>
+          <div class="diag-row"><span>Remote participants</span><strong>${remotePeersCount}</strong></div>
           <div class="diag-row"><span>STUN configured</span><strong>${iceMeta.has_stun ? "Yes" : "No"}</strong></div>
-          <div class="diag-row"><span>TURN configured</span><strong>${signaling?.isFallback ? "Yes (Metered TURN)" : iceMeta.has_turn ? "Yes" : "No"}</strong></div>
+          <div class="diag-row"><span>TURN configured</span><strong>${iceMeta.has_turn ? "Yes" : "No"}</strong></div>
           ${remotes.map(r => `
             <div class="diag-peer">
               <div><strong>${(r.peerId || "").slice(0, 20)}…</strong></div>
               <div>WebRTC: ${r.connection === "connected" ? "Connected" : (r.connection || "—")}</div>
               <div>ICE: ${r.ice === "connected" || r.ice === "completed" ? "Connected" : (r.ice || "—")}</div>
-              <div>ICE types: ${(r.candidateTypes || []).join(", ") || "—"} <span class="muted">(host / srflx / relay)</span></div>
             </div>
-          `).join("") || `<p class="muted">PeerJS slot scanner active — probing other slots every 3s.</p>`}
-          <p class="muted" style="margin-top:0.75rem;font-size:0.8rem">
-            Media exchange via PeerJS peer.call() with TURN relay. Open console (F12) for detailed logs.
-          </p>
+          `).join("") || `<p class="muted">No remote peers connected yet.</p>`}
         </div>
       `;
     }
@@ -390,6 +383,16 @@
       role = join.participant.role;
       meeting = join.meeting;
       renderRoom();
+
+      if (!localStream) {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+          console.log("[MINUTA RTC] Local stream acquired inside enterRoom");
+        } catch (err) {
+          console.error("[MINUTA RTC] Local media acquisition failed in enterRoom:", err);
+        }
+      }
+
       if (localStream) addTile("local", localStream, `${displayName} (you)`, true);
 
       let iceConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }], has_turn: false, has_stun: true };
@@ -409,47 +412,48 @@
         role,
         localStream,
         onRemoteStream: (id, stream) => {
-          // PeerJS MediaConnection delivered a remote stream — show it
           const meta = roster.find((p) => p.peer_id === id);
-          addTile(id, stream, meta?.display_name || "Participant");
+          addTile(id, stream, meta?.display_name || id);
           if (side === "diag") renderSide();
         },
         onState: (state) => {
           wsState = state;
+          updateDebugPanel();
           if (side === "diag") renderSide();
         },
         onMessage: async (msg) => {
-          if (signaling._buildRoster) {
-            roster = signaling._buildRoster();
-          }
           if (msg.type === "welcome") {
-            roster = msg.roster || roster;
-            if (mesh && !signaling.isFallback) {
+            roster = msg.roster || [];
+            console.log("[MINUTA RTC] Received welcome roster:", roster);
+            if (mesh) {
               for (const p of roster) {
-                if (p.peer_id !== peerId) await mesh.call(p.peer_id);
+                if (p.peer_id !== peerId) {
+                  await mesh.call(p.peer_id);
+                }
               }
             }
             renderSide();
             updateDebugPanel();
           } else if (msg.type === "peer_joined") {
             roster = msg.roster || roster;
-            if (mesh && !signaling.isFallback && msg.peer_id !== peerId) {
+            console.log(`[MINUTA RTC] REAL PEER JOINED: ${msg.peer_id} (${msg.display_name})`);
+            if (mesh && msg.peer_id !== peerId) {
               await mesh.call(msg.peer_id);
             }
             renderSide();
             updateDebugPanel();
           } else if (msg.type === "peer_left") {
-            roster = msg.roster || roster;
+            roster = msg.roster || roster.filter(p => p.peer_id !== msg.peer_id);
             if (mesh) mesh.closePeer(msg.peer_id);
             removeTile(msg.peer_id);
             renderSide();
             updateDebugPanel();
           } else if (msg.type === "offer" && mesh) {
-            await mesh.handleOffer(msg._sender || msg.from, msg.sdp);
+            await mesh.handleOffer(msg.from || msg._sender, msg.sdp);
           } else if (msg.type === "answer" && mesh) {
-            await mesh.handleAnswer(msg._sender || msg.from, msg.sdp);
+            await mesh.handleAnswer(msg.from || msg._sender, msg.sdp);
           } else if (msg.type === "ice_candidate" && mesh) {
-            await mesh.handleIce(msg._sender || msg.from, msg.candidate);
+            await mesh.handleIce(msg.from || msg._sender, msg.candidate);
           } else if (msg.type === "chat_message") {
             chatMessages.push(msg);
             if (side === "chat") renderSide();
@@ -458,7 +462,7 @@
             if (side === "transcript") renderSide();
           } else if (msg.type === "recording_state") {
             recording = !!msg.active;
-            document.getElementById("rec-pill").classList.toggle("active", recording);
+            document.getElementById("rec-pill")?.classList.toggle("active", recording);
             if (recording) toast(`${msg.by} started recording`, "ok");
           } else if (msg.type === "meeting_ended") {
             toast("Host ended the meeting", "ok");
@@ -469,9 +473,7 @@
 
       function updateDebugPanel() {
         if (!signaling) return;
-        const currentRoster = signaling._buildRoster ? signaling._buildRoster() : roster;
-        const myId = signaling.peerJsId || peerId;
-        const remotes = currentRoster.filter(p => p.peer_id !== myId && p.peer_id !== peerId);
+        const remotes = roster.filter(p => p.peer_id !== peerId);
 
         const dbgState = document.getElementById("dbg-state");
         const dbgProvider = document.getElementById("dbg-provider");
@@ -479,50 +481,43 @@
         const dbgIds = document.getElementById("dbg-ids");
 
         if (dbgState) dbgState.textContent = wsState.toUpperCase();
-        if (dbgProvider) dbgProvider.textContent = signaling.isFallback ? `PeerJS Relay (Slot ${signaling.slotIndex >= 0 ? signaling.slotIndex : "..."})` : "FastAPI WebSocket";
+        if (dbgProvider) dbgProvider.textContent = "FastAPI WebSocket";
         if (dbgCount) {
           dbgCount.textContent = remotes.length;
           dbgCount.style.color = remotes.length > 0 ? "#10b981" : "#ef4444";
         }
         if (dbgIds) {
-          dbgIds.textContent = remotes.map(p => p.display_name || p.peer_id).join(", ") || "None";
+          dbgIds.textContent = remotes.map(p => `${p.display_name} (${p.peer_id.slice(0, 8)})`).join(", ") || "None";
         }
       }
+
+      mesh = new MeshRoom({
+        signaling,
+        localStream,
+        iceServers: iceConfig.iceServers || [{ urls: "stun:stun.l.google.com:19302" }],
+        onRemoteStream: (id, stream) => {
+          const meta = roster.find((p) => p.peer_id === id);
+          addTile(id, stream, meta?.display_name || id);
+          if (side === "diag") renderSide();
+        },
+        onPeerLeft: (id) => {
+          removeTile(id);
+          if (side === "diag") renderSide();
+        },
+        onPeerState: (id, state) => {
+          peerDiag.set(id, state);
+          if (side === "diag") renderSide();
+        },
+      });
 
       await signaling.connect();
       updateDebugPanel();
 
-      // Poll roster & debug panel every 1.5s to ensure instant participant discovery UI updates
       const debugTimer = setInterval(() => {
-        if (signaling._buildRoster) {
-          roster = signaling._buildRoster();
-          renderSide();
-          updateDebugPanel();
-        }
+        renderSide();
+        updateDebugPanel();
       }, 1500);
 
-      // Only create MeshRoom for WebSocket-based signaling (not PeerJS fallback)
-      // In fallback mode, PeerJS peer.call() / peer.on("call") handles all media
-      if (!signaling.isFallback) {
-        mesh = new MeshRoom({
-          signaling,
-          localStream,
-          iceServers: iceConfig.iceServers || [{ urls: "stun:stun.l.google.com:19302" }],
-          onRemoteStream: (id, stream) => {
-            const meta = roster.find((p) => p.peer_id === id);
-            addTile(id, stream, meta?.display_name || "Participant");
-            if (side === "diag") renderSide();
-          },
-          onPeerLeft: (id) => {
-            removeTile(id);
-            if (side === "diag") renderSide();
-          },
-          onPeerState: (id, state) => {
-            peerDiag.set(id, state);
-            if (side === "diag") renderSide();
-          },
-        });
-      }
 
       renderSide();
 

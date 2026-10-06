@@ -37,23 +37,22 @@ export class MeshRoom {
   async ensurePc(peerId) {
     if (this.pcs.has(peerId)) return this.pcs.get(peerId);
 
-    console.log("[MINUTA TEST] RTCPeerConnection created for peer", peerId);
+    console.log(`[MINUTA RTC] Creating RTCPeerConnection: ${peerId}`);
     logMinuta("Creating RTCPeerConnection", `for peer ${peerId}`);
     const pc = new RTCPeerConnection({ iceServers: this.iceServers });
 
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => {
         pc.addTrack(track, this.localStream);
-        if (track.kind === "video") console.log("[MINUTA TEST] Local video track added");
-        if (track.kind === "audio") console.log("[MINUTA TEST] Local audio track added");
+        if (track.kind === "video") console.log(`[MINUTA RTC] Added local video track to ${peerId}`);
+        if (track.kind === "audio") console.log(`[MINUTA RTC] Added local audio track to ${peerId}`);
       });
     }
 
     pc.onicecandidate = (ev) => {
       if (ev.candidate) {
-        console.log("[MINUTA TEST] ICE candidate generated", ev.candidate.candidate);
-        console.log("[MINUTA TEST] ICE candidate sent to", peerId);
-        logMinuta("Sending ICE candidate", `to ${peerId}: ${ev.candidate.candidate.slice(0, 40)}...`);
+        console.log(`[MINUTA RTC] ICE candidate sent: ${ev.candidate.candidate.slice(0, 40)}...`);
+        logMinuta("Sending ICE candidate", `to ${peerId}`);
         this.signaling.send({
           type: "ice_candidate",
           to: peerId,
@@ -63,15 +62,15 @@ export class MeshRoom {
     };
 
     pc.ontrack = (ev) => {
-      if (ev.track.kind === "video") console.log("[MINUTA TEST] REMOTE VIDEO TRACK RECEIVED from", peerId);
-      if (ev.track.kind === "audio") console.log("[MINUTA TEST] REMOTE AUDIO TRACK RECEIVED from", peerId);
+      if (ev.track.kind === "video") console.log(`[MINUTA RTC] REMOTE VIDEO TRACK RECEIVED FROM ${peerId}`);
+      if (ev.track.kind === "audio") console.log(`[MINUTA RTC] REMOTE AUDIO TRACK RECEIVED FROM ${peerId}`);
       logMinuta("Remote track received", `kind=${ev.track.kind} from ${peerId}`);
       const remoteStream = ev.streams[0] || new MediaStream([ev.track]);
       this.onRemoteStream?.(peerId, remoteStream);
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`[MINUTA TEST] Peer connection state ${peerId}: ${pc.connectionState}`);
+      console.log(`[MINUTA RTC] Peer connection state ${peerId}: ${pc.connectionState}`);
       logMinuta("Peer connection state", `${peerId}: ${pc.connectionState}`);
       this._setState(peerId, { connection: pc.connectionState });
       if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
@@ -84,7 +83,7 @@ export class MeshRoom {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log(`[MINUTA TEST] ICE connection state ${peerId}: ${pc.iceConnectionState}`);
+      console.log(`[MINUTA RTC] ICE connection state ${peerId}: ${pc.iceConnectionState}`);
       logMinuta("ICE connection state", `${peerId}: ${pc.iceConnectionState}`);
       this._setState(peerId, { ice: pc.iceConnectionState });
     };
@@ -105,7 +104,7 @@ export class MeshRoom {
           }
         });
         if (inVideo > 0 || inAudio > 0) {
-          console.log(`[MINUTA TEST] RTCStats for ${peerId}: inbound-rtp video bytesReceived: ${inVideo}, audio bytesReceived: ${inAudio}`);
+          console.log(`[MINUTA RTC] RTCStats for ${peerId}: inbound video bytes: ${inVideo}, audio bytes: ${inAudio}`);
         }
       } catch (_) {}
     }, 5000);
@@ -125,16 +124,15 @@ export class MeshRoom {
       const pc = await this.ensurePc(peerId);
       this.makingOffer.add(peerId);
       const offer = await pc.createOffer();
-      console.log("[MINUTA TEST] SDP offer created for", peerId);
+      console.log(`[MINUTA RTC] Offer sent: SDP offer created for ${peerId}`);
       await pc.setLocalDescription(offer);
-      console.log("[MINUTA TEST] Offer sent to", peerId);
       this.signaling.send({
         type: "offer",
         to: peerId,
         sdp: pc.localDescription,
       });
     } catch (err) {
-      console.error("[MINUTA] Offer error:", err);
+      console.error("[MINUTA RTC] Offer error:", err);
     } finally {
       this.makingOffer.delete(peerId);
     }
@@ -142,8 +140,7 @@ export class MeshRoom {
 
   async handleOffer(from, sdp) {
     try {
-      console.log("[MINUTA TEST] Offer received from", from);
-      console.log("[MINUTA TEST] SDP offer received from", from);
+      console.log(`[MINUTA RTC] Offer received: from ${from}`);
       logMinuta("Received offer", `from ${from}`);
       const pc = await this.ensurePc(from);
 
@@ -158,47 +155,44 @@ export class MeshRoom {
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      console.log("[MINUTA TEST] Remote description set for offer from", from);
+      console.log(`[MINUTA RTC] Remote description set for offer from ${from}`);
       logMinuta("Creating answer", `for ${from}`);
       const answer = await pc.createAnswer();
-      console.log("[MINUTA TEST] SDP answer created for", from);
       await pc.setLocalDescription(answer);
-      console.log("[MINUTA TEST] Answer sent to", from);
+      console.log(`[MINUTA RTC] Answer sent: to ${from}`);
       this.signaling.send({
         type: "answer",
         to: from,
         sdp: pc.localDescription,
       });
     } catch (err) {
-      console.error("[MINUTA] Handle offer error:", err);
+      console.error("[MINUTA RTC] Handle offer error:", err);
     }
   }
 
   async handleAnswer(from, sdp) {
     try {
-      console.log("[MINUTA TEST] Answer received from", from);
-      console.log("[MINUTA TEST] SDP answer received from", from);
+      console.log(`[MINUTA RTC] Answer received: from ${from}`);
       logMinuta("Received answer", `from ${from}`);
       const pc = this.pcs.get(from);
       if (!pc) return;
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      console.log("[MINUTA TEST] Remote description set for answer from", from);
+      console.log(`[MINUTA RTC] Remote description set for answer from ${from}`);
     } catch (err) {
-      console.error("[MINUTA] Handle answer error:", err);
+      console.error("[MINUTA RTC] Handle answer error:", err);
     }
   }
 
   async handleIce(from, candidate) {
     try {
-      console.log("[MINUTA TEST] ICE candidate received from", from);
+      console.log(`[MINUTA RTC] ICE candidate received: from ${from}`);
       logMinuta("Received ICE candidate", `from ${from}`);
       const pc = await this.ensurePc(from);
       if (candidate) {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
-        console.log("[MINUTA TEST] ICE candidate added for", from);
       }
     } catch (err) {
-      console.error("[MINUTA] Handle ICE error:", err);
+      console.error("[MINUTA RTC] Handle ICE error:", err);
     }
   }
 
@@ -230,7 +224,7 @@ export class MeshRoom {
 }
 
 /* ───────────────────────────────────────────────────────
-   SignalingClient – WebSockets Primary + PeerJS Cloud Fallback
+   SignalingClient – Authoritative FastAPI WebSocket Signaling
    ─────────────────────────────────────────────────────── */
 export class SignalingClient {
   constructor(publicId, { peerId, displayName, role, localStream, onRemoteStream, onMessage, onState }) {
@@ -243,36 +237,17 @@ export class SignalingClient {
     this.onMessage = onMessage;
     this.onState = onState;
     this.ws = null;
-    this.channel = null;
-    this.storageKey = `minuta_room_msg_${publicId}`;
-    this.isFallback = false;
-    this.peerjs = null;
-    this.peerJsId = null;
-    this.peerJsConns = new Map();
-    this.peerJsCalls = new Map();
-    this.activeStreams = new Set();
-    this.discoveredPeers = new Map();
-    this.slotIndex = -1;
-    this.slotTimer = null;
+    this.roster = [];
+    this.reconnectTimer = null;
+    this.closedExplicitly = false;
 
-    console.log(`[MINUTA DEBUG] Meeting ID: ${publicId}`);
-    console.log(`[MINUTA DEBUG] Peer ID: ${peerId}`);
+    console.log(`[MINUTA RTC] MEETING ID: ${publicId}`);
+    console.log(`[MINUTA RTC] MY PARTICIPANT ID: ${peerId}`);
     logMinuta("Joining room", `Room: ${publicId} | Peer: ${peerId} | User: ${displayName}`);
   }
 
-  _registerDiscoveredPeer(id, displayName) {
-    if (!id || id === this.peerId || id === this.peerJsId) return;
-    if (!this.discoveredPeers.has(id)) {
-      console.log(`[MINUTA DEBUG] Remote peer discovered: ${id} (${displayName || "Participant"})`);
-    }
-    this.discoveredPeers.set(id, {
-      peer_id: id,
-      display_name: displayName || this.discoveredPeers.get(id)?.display_name || "Participant",
-      role: "participant",
-    });
-  }
-
   connect() {
+    this.closedExplicitly = false;
     this.onState?.("connecting");
     const params = {
       peer_id: this.peerId,
@@ -283,29 +258,19 @@ export class SignalingClient {
 
     return new Promise((resolve) => {
       let resolved = false;
-      const timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          logMinuta("WebSocket connection timeout", "Falling back to PeerJS cloud relay");
-          this._initFallback();
-          resolve();
-        }
-      }, 1500);
 
       try {
         logMinuta("Connecting to signaling server", url);
+        console.log(`[MINUTA RTC] Connecting to WebSocket: ${url}`);
         this.ws = new WebSocket(url);
 
         this.ws.onopen = () => {
           if (!resolved) {
             resolved = true;
-            clearTimeout(timeout);
-            console.log("[MINUTA DEBUG] WebSocket connected");
-            console.log(`[MINUTA DEBUG] Meeting ID: ${this.publicId}`);
-            console.log(`[MINUTA DEBUG] Peer ID: ${this.peerId}`);
-            console.log(`[MINUTA DEBUG] Signaling URL: ${url}`);
-            console.log("[MINUTA DEBUG] Signaling provider: FastAPI WebSocket");
-            logMinuta("Connected to signaling server", "WebSocket connection active");
+            console.log("[MINUTA RTC] WebSocket connected to FastAPI signaling server");
+            console.log(`[MINUTA RTC] MEETING ID: ${this.publicId}`);
+            console.log(`[MINUTA RTC] MY PARTICIPANT ID: ${this.peerId}`);
+            logMinuta("Connected to signaling server", "FastAPI WebSocket connection active");
             this.onState?.("open");
             resolve();
           }
@@ -314,446 +279,69 @@ export class SignalingClient {
         this.ws.onmessage = (ev) => {
           try {
             const data = JSON.parse(ev.data);
-            if (data.type === "peer_joined") {
-              console.log("[MINUTA DEBUG] Remote peer discovered:", data.peer_id || data.display_name);
-              this._registerDiscoveredPeer(data.peer_id, data.display_name);
-              logMinuta("Participant joined", `${data.display_name || data.peer_id}`);
-            } else if (data.type === "welcome" && Array.isArray(data.roster)) {
-              for (const p of data.roster) {
-                if (p.peer_id !== this.peerId) {
-                  this._registerDiscoveredPeer(p.peer_id, p.display_name);
-                }
-              }
+            if (data.type === "welcome") {
+              this.roster = data.roster || [];
+              console.log("[MINUTA RTC] Server welcome received. Roster size:", this.roster.length);
+            } else if (data.type === "peer_joined") {
+              this.roster = data.roster || this.roster;
+              console.log(`[MINUTA RTC] REAL PEER JOINED: ${data.peer_id} (${data.display_name})`);
             } else if (data.type === "peer_left") {
-              this.discoveredPeers.delete(data.peer_id);
-              logMinuta("Participant left", `${data.peer_id}`);
+              this.roster = data.roster || this.roster.filter((p) => p.peer_id !== data.peer_id);
+              console.log(`[MINUTA RTC] REAL PEER LEFT: ${data.peer_id}`);
             }
             this.onMessage?.(data);
-          } catch (_) {}
+          } catch (err) {
+            console.error("[MINUTA RTC] Message parsing error:", err);
+          }
         };
 
         this.ws.onerror = (err) => {
+          console.error("[MINUTA RTC] WebSocket error:", err);
           if (!resolved) {
             resolved = true;
-            clearTimeout(timeout);
-            logMinuta("WebSocket signaling error", "Falling back to PeerJS cloud relay");
-            this._initFallback();
+            this.onState?.("error");
             resolve();
           }
         };
 
         this.ws.onclose = () => {
-          if (this.isFallback) return;
-          logMinuta("Signaling connection closed");
+          console.log("[MINUTA RTC] WebSocket closed");
           this.onState?.("closed");
+          if (!this.closedExplicitly) {
+            console.log("[MINUTA RTC] Reconnecting in 3s...");
+            this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+          }
         };
       } catch (err) {
+        console.error("[MINUTA RTC] WebSocket init exception:", err);
         if (!resolved) {
           resolved = true;
-          clearTimeout(timeout);
-          logMinuta("WebSocket initialization error", err.message);
-          this._initFallback();
+          this.onState?.("error");
           resolve();
         }
       }
     });
   }
 
-  _initFallback() {
-    this.isFallback = true;
-    this.onState?.("open");
-    console.log(`[MINUTA DEBUG] Meeting ID: ${this.publicId}`);
-    console.log(`[MINUTA DEBUG] Peer ID: ${this.peerId}`);
-    console.log("[MINUTA DEBUG] Signaling provider: PeerJS Cloud Relay");
-    logMinuta("Connected to signaling server", "PeerJS Cloud Fallback Mode");
-
-    // Local tab broadcast
-    const channelName = `minuta_meeting_${this.publicId}`;
-    if (typeof BroadcastChannel !== "undefined") {
-      this.channel = new BroadcastChannel(channelName);
-      this.channel.onmessage = (ev) => this._handleFallbackMsg(ev.data);
-    }
-
-    // Cross-tab storage listener
-    window.addEventListener("storage", (ev) => {
-      if (ev.key === this.storageKey && ev.newValue) {
-        try {
-          const msg = JSON.parse(ev.newValue);
-          if (msg && msg._sender !== this.peerId && msg._sender !== this.peerJsId) {
-            this._handleFallbackMsg(msg);
-          }
-        } catch (_) {}
-      }
-    });
-
-    this._initPeerJS();
-  }
-
-  _initPeerJS() {
-    if (window.Peer) {
-      this._setupPeerJS();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js";
-    script.onload = () => this._setupPeerJS();
-    script.onerror = () => {
-      const backup = document.createElement("script");
-      backup.src = "https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js";
-      backup.onload = () => this._setupPeerJS();
-      document.head.appendChild(backup);
-    };
-    document.head.appendChild(script);
-  }
-
-  _setupPeerJS() {
-    if (!window.Peer || this.peerjs) return;
-    this._trySlot(0);
-  }
-
-  _trySlot(slot) {
-    const maxSlots = 8;
-    if (slot >= maxSlots) {
-      const fallbackId = `minuta_${this.publicId}_extra_${Math.random().toString(36).slice(2, 8)}`;
-      this._createPeer(fallbackId, slot);
-      return;
-    }
-    const candidateId = `minuta_${this.publicId}_slot${slot}`;
-    this._createPeer(candidateId, slot, () => {
-      this._trySlot(slot + 1);
-    });
-  }
-
-  _createPeer(id, slot, onRegistrationError) {
-    try {
-      const iceServers = [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-        { urls: "stun:stun3.l.google.com:19302" },
-        { urls: "stun:global.stun.twilio.com:3478" },
-        {
-          urls: "turn:a.relay.metered.ca:80",
-          username: "e8dd65b092860a7b0ac2f090",
-          credential: "5ujhNPGlR4+L1RaK",
-        },
-        {
-          urls: "turn:a.relay.metered.ca:443",
-          username: "e8dd65b092860a7b0ac2f090",
-          credential: "5ujhNPGlR4+L1RaK",
-        },
-        {
-          urls: "turn:a.relay.metered.ca:443?transport=tcp",
-          username: "e8dd65b092860a7b0ac2f090",
-          credential: "5ujhNPGlR4+L1RaK",
-        },
-        {
-          urls: "turn:openrelay.metered.ca:80",
-          username: "openrelayproject",
-          credential: "openrelayproject",
-        },
-        {
-          urls: "turn:openrelay.metered.ca:443",
-          username: "openrelayproject",
-          credential: "openrelayproject",
-        },
-        {
-          urls: "turn:openrelay.metered.ca:443?transport=tcp",
-          username: "openrelayproject",
-          credential: "openrelayproject",
-        },
-      ];
-
-      const peer = new window.Peer(id, { config: { iceServers } });
-      let registered = false;
-
-      peer.on("open", (openId) => {
-        registered = true;
-        this.peerjs = peer;
-        this.slotIndex = slot;
-        this.peerJsId = openId;
-        console.log(`[MINUTA DEBUG] PeerJS registered at Slot ${slot}: ${openId}`);
-        logMinuta("PeerJS registered", `Slot ${slot}: ${openId}`);
-
-        peer.on("call", (call) => {
-          logMinuta("Received incoming media call", `from ${call.peer}`);
-          this._registerDiscoveredPeer(call.peer, "Participant");
-          const streamToSend = this.localStream || new MediaStream();
-          call.answer(streamToSend);
-          this._bindMediaCall(call.peer, call);
-        });
-
-        peer.on("connection", (conn) => {
-          conn.on("open", () => {
-            logMinuta("Participant joined", `PeerJS data connection from ${conn.peer}`);
-            this._registerDiscoveredPeer(conn.peer, conn._displayName);
-            this.peerJsConns.set(conn.peer, conn);
-            try {
-              conn.send({
-                type: "welcome",
-                roster: this._buildRoster(),
-                _sender: this.peerJsId,
-                display_name: this.displayName,
-              });
-            } catch (_) {}
-          });
-          conn.on("data", (data) => {
-            if (data && data._sender) {
-              this._registerDiscoveredPeer(data._sender, data.display_name);
-              this.peerJsConns.set(data._sender, conn);
-            }
-            if (data && data.display_name) conn._displayName = data.display_name;
-            this._handleFallbackMsg(data);
-          });
-          conn.on("close", () => {
-            logMinuta("Participant left", `PeerJS data channel closed: ${conn.peer}`);
-            this.peerJsConns.delete(conn.peer);
-          });
-        });
-
-        peer.on("error", (err) => {
-          if (err?.type === "peer-unavailable") {
-            const match = err.message?.match(/peer\s+(\S+)/i);
-            if (match) {
-              const failedId = match[1];
-              this.peerJsCalls.delete(failedId);
-              this.activeStreams.delete(failedId);
-            }
-          }
-        });
-
-        this._startSlotScanner();
-      });
-
-      peer.on("error", (err) => {
-        if (!registered) {
-          try { peer.destroy(); } catch (_) {}
-          onRegistrationError?.(err);
-        }
-      });
-    } catch (e) {
-      onRegistrationError?.(e);
-    }
-  }
-
-  _bindMediaCall(remoteId, call) {
-    this.peerJsCalls.set(remoteId, call);
-    this._registerDiscoveredPeer(remoteId, "Participant");
-
-    call.on("stream", (remoteStream) => {
-      logMinuta("Remote track received", `via PeerJS from ${remoteId} (tracks: ${remoteStream.getTracks().length})`);
-      this.activeStreams.add(remoteId);
-      this.onRemoteStream?.(remoteId, remoteStream);
-    });
-
-    call.on("close", () => {
-      logMinuta("Participant left", `PeerJS media call closed: ${remoteId}`);
-      this.peerJsCalls.delete(remoteId);
-      this.activeStreams.delete(remoteId);
-    });
-
-    call.on("error", (err) => {
-      logMinuta("Peer connection state", `PeerJS call error ${remoteId}: ${err?.message}`);
-      this.peerJsCalls.delete(remoteId);
-      this.activeStreams.delete(remoteId);
-    });
-  }
-
-  replaceVideoTrack(track) {
-    for (const call of this.peerJsCalls.values()) {
-      if (call && call.peerConnection) {
-        const sender = call.peerConnection.getSenders().find((s) => s.track && s.track.kind === "video");
-        if (sender) sender.replaceTrack(track);
-      }
-    }
-  }
-
-  _startSlotScanner() {
-    if (this.slotTimer) clearInterval(this.slotTimer);
-
-    const scan = () => {
-      if (!this.peerjs || this.peerjs.destroyed || this.slotIndex < 0) return;
-
-      for (let s = 0; s < 8; s++) {
-        if (s === this.slotIndex) continue;
-        const targetId = `minuta_${this.publicId}_slot${s}`;
-
-        // Probe data channels for ALL slots so peers discover each other bidirectionally
-        const existingConn = this.peerJsConns.get(targetId);
-        if (!existingConn || !existingConn.open) {
-          this._connectDataChannel(targetId);
-        }
-
-        // Only lower slot index initiates media call to higher slot index to prevent media glare
-        if (s > this.slotIndex && !this.activeStreams.has(targetId) && !this.peerJsCalls.has(targetId)) {
-          this._callSlot(targetId);
-        }
-      }
-    };
-
-    scan();
-    this.slotTimer = setInterval(scan, 3000);
-  }
-
-  _callSlot(targetId) {
-    if (!this.peerjs || this.peerjs.destroyed) return;
-    const streamToSend = this.localStream || new MediaStream();
-    try {
-      logMinuta("Creating offer", `Calling PeerJS target ${targetId}`);
-      const call = this.peerjs.call(targetId, streamToSend);
-      if (call) {
-        this._bindMediaCall(targetId, call);
-      }
-    } catch (err) {}
-  }
-
-  _connectDataChannel(targetId) {
-    if (!this.peerjs || this.peerjs.destroyed) return;
-    try {
-      const conn = this.peerjs.connect(targetId);
-      conn._pending = [
-        {
-          type: "peer_joined",
-          peer_id: this.peerJsId,
-          display_name: this.displayName,
-          role: this.role,
-          roster: this._buildRoster(),
-          _sender: this.peerJsId,
-        },
-      ];
-
-      conn.on("open", () => {
-        this.peerJsConns.set(targetId, conn);
-        this._registerDiscoveredPeer(targetId, conn._displayName);
-        if (conn._pending) {
-          for (const m of conn._pending) {
-            try { conn.send(m); } catch (_) {}
-          }
-          conn._pending = [];
-        }
-      });
-      conn.on("data", (data) => {
-        if (data && data._sender) {
-          this._registerDiscoveredPeer(data._sender, data.display_name);
-          this.peerJsConns.set(data._sender, conn);
-        }
-        if (data && data.display_name) conn._displayName = data.display_name;
-        this._handleFallbackMsg(data);
-      });
-      conn.on("close", () => this.peerJsConns.delete(targetId));
-      conn.on("error", () => this.peerJsConns.delete(targetId));
-
-      setTimeout(() => {
-        if (!conn.open) {
-          this.peerJsConns.delete(targetId);
-          try { conn.close(); } catch (_) {}
-        }
-      }, 6000);
-    } catch (_) {}
-  }
-
-  _buildRoster() {
-    const list = [];
-    const seen = new Set();
-
-    const myId = this.peerJsId || this.peerId;
-    list.push({ peer_id: myId, display_name: this.displayName + " (You)", role: this.role });
-    seen.add(myId);
-
-    for (const [id, peerObj] of this.discoveredPeers.entries()) {
-      if (!seen.has(id)) {
-        seen.add(id);
-        list.push(peerObj);
-      }
-    }
-    for (const [id, conn] of this.peerJsConns.entries()) {
-      if (conn.open && !seen.has(id)) {
-        seen.add(id);
-        list.push({ peer_id: id, display_name: conn._displayName || id, role: "participant" });
-      }
-    }
-    return list;
-  }
-
-  _handleFallbackMsg(msg) {
-    if (!msg) return;
-    const sender = msg._sender || msg.from || msg.peer_id;
-    if (sender === this.peerId || sender === this.peerJsId) return;
-    if (msg.to && msg.to !== this.peerId && msg.to !== this.peerJsId) return;
-
-    if (sender) {
-      this._registerDiscoveredPeer(sender, msg.display_name);
-    }
-    if (msg.type === "peer_joined" || msg.type === "welcome") {
-      if (Array.isArray(msg.roster)) {
-        for (const p of msg.roster) {
-          if (p.peer_id !== this.peerId && p.peer_id !== this.peerJsId) {
-            this._registerDiscoveredPeer(p.peer_id, p.display_name);
-          }
-        }
-      }
-      msg.roster = this._buildRoster();
-    }
-    this.onMessage?.(msg);
-  }
-
-  _dispatchFallbackMsg(payload) {
-    const msg = { ...payload, _sender: this.peerJsId || this.peerId };
-
-    if (this.channel) {
-      try { this.channel.postMessage(msg); } catch (_) {}
-    }
-
-    try {
-      localStorage.setItem(this.storageKey, JSON.stringify({ ...msg, _t: Date.now() }));
-    } catch (_) {}
-
-    for (const conn of this.peerJsConns.values()) {
-      if (conn && conn.open) {
-        try { conn.send(msg); } catch (_) {}
-      }
+  send(payload) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(payload));
+    } else {
+      console.warn("[MINUTA RTC] Cannot send payload, WebSocket not open:", payload.type);
     }
   }
 
   readyStateLabel() {
-    if (this.isFallback) {
-      const slot = this.slotIndex >= 0 ? `slot ${this.slotIndex}` : "connecting";
-      const streams = this.activeStreams.size;
-      return `PeerJS Cloud (${slot}, ${streams} active stream${streams !== 1 ? "s" : ""})`;
-    }
     if (!this.ws) return "none";
     return ["connecting", "open", "closing", "closed"][this.ws.readyState] || "unknown";
   }
 
-  send(payload) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(payload));
-    } else if (this.isFallback) {
-      this._dispatchFallbackMsg(payload);
-    }
-  }
-
   close() {
-    logMinuta("Participant left", "Closing SignalingClient");
-    if (this.slotTimer) { clearInterval(this.slotTimer); this.slotTimer = null; }
-    if (this.ws) { try { this.ws.close(); } catch (_) {} }
-    if (this.channel) { try { this.channel.close(); } catch (_) {} }
-
-    if (this.isFallback) {
-      this._dispatchFallbackMsg({
-        type: "peer_left",
-        peer_id: this.peerJsId || this.peerId,
-        display_name: this.displayName,
-      });
+    this.closedExplicitly = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    if (this.ws) {
+      try { this.ws.close(); } catch (_) {}
     }
-
-    for (const call of this.peerJsCalls.values()) {
-      try { call.close(); } catch (_) {}
-    }
-    this.peerJsCalls.clear();
-    this.activeStreams.clear();
-
-    if (this.peerjs) { try { this.peerjs.destroy(); } catch (_) {} }
   }
 }
 
